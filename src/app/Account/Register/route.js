@@ -4,12 +4,13 @@ import { setSession } from '@/lib/auth';
 
 export async function POST(request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const handler = searchParams.get('handler');
+    const url = request.nextUrl || new URL(request.url, 'http://localhost');
+    const handler = url.searchParams.get('handler');
     const formData = await request.formData();
 
     if (handler === 'SendOtp') {
-      const phoneNumber = formData.get('phoneNumber');
+      const rawPhone = formData.get('phoneNumber');
+      const phoneNumber = rawPhone ? rawPhone.toString().trim() : '';
       if (!phoneNumber) {
         return NextResponse.json({ success: false, message: 'Vui lòng nhập số điện thoại.' });
       }
@@ -19,6 +20,8 @@ export async function POST(request) {
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 phút hiệu lực
 
       const db = getDb();
+      if (!Array.isArray(db.otps)) db.otps = [];
+
       // Xóa OTP cũ của số điện thoại này
       db.otps = db.otps.filter(o => o.phoneNumber !== phoneNumber);
       // Lưu OTP mới
@@ -35,15 +38,18 @@ export async function POST(request) {
     }
 
     if (handler === 'VerifyOtp') {
-      const phoneNumber = formData.get('phoneNumber');
-      const otpCode = formData.get('otpCode');
+      const rawPhone = formData.get('phoneNumber');
+      const rawOtp = formData.get('otpCode');
+      const phoneNumber = rawPhone ? rawPhone.toString().trim() : '';
+      const otpCode = rawOtp ? rawOtp.toString().trim() : '';
 
       if (!phoneNumber || !otpCode) {
         return NextResponse.json({ success: false, message: 'Vui lòng cung cấp đầy đủ thông tin xác thực.' });
       }
 
       const db = getDb();
-      const activeOtp = db.otps.find(o => o.phoneNumber === phoneNumber);
+      const otps = Array.isArray(db.otps) ? db.otps : [];
+      const activeOtp = otps.find(o => o.phoneNumber === phoneNumber);
 
       if (!activeOtp || activeOtp.code !== otpCode) {
         return NextResponse.json({ success: false, message: 'Mã xác minh không chính xác.' });
@@ -58,16 +64,17 @@ export async function POST(request) {
     }
 
     // Luồng đăng ký hoàn tất
-    const fullName = formData.get('Input.FullName');
-    const phoneNumber = formData.get('Input.PhoneNumber');
-    const email = formData.get('Input.Email');
-    const password = formData.get('Input.Password');
+    const fullName = formData.get('Input.FullName')?.toString().trim();
+    const phoneNumber = formData.get('Input.PhoneNumber')?.toString().trim();
+    const email = formData.get('Input.Email')?.toString().trim();
+    const password = formData.get('Input.Password')?.toString();
 
     if (!fullName || !phoneNumber || !email || !password) {
       return NextResponse.json({ success: false, message: 'Vui lòng nhập đầy đủ thông tin đăng ký.' });
     }
 
     const db = getDb();
+    if (!Array.isArray(db.users)) db.users = [];
     const existUser = db.users.find(u => u.phoneNumber === phoneNumber);
     if (existUser) {
       return NextResponse.json({ success: false, message: 'Số điện thoại này đã được đăng ký tài khoản khác.' });
@@ -86,7 +93,9 @@ export async function POST(request) {
 
     db.users.push(newUser);
     // Xóa OTP sau khi sử dụng thành công
-    db.otps = db.otps.filter(o => o.phoneNumber !== phoneNumber);
+    if (Array.isArray(db.otps)) {
+      db.otps = db.otps.filter(o => o.phoneNumber !== phoneNumber);
+    }
     saveDb(db);
 
     // Lưu session đăng nhập luôn
@@ -94,7 +103,7 @@ export async function POST(request) {
 
     return NextResponse.json({ success: true, redirectUrl: '/portal' });
   } catch (error) {
-    console.error('Error during registration:', error);
+    console.error('Error during registration/OTP:', error);
     return NextResponse.json({ success: false, message: 'Đã xảy ra lỗi hệ thống.' });
   }
 }

@@ -29,7 +29,8 @@ export default function AuthModals() {
 
   // Gửi OTP
   const handleSendOtp = async () => {
-    if (!regPhone) {
+    const trimmedPhone = regPhone.trim();
+    if (!trimmedPhone) {
       setOtpMsg({ text: 'Vui lòng nhập số điện thoại trước.', type: 'danger' });
       return;
     }
@@ -37,7 +38,7 @@ export default function AuthModals() {
     
     try {
       const fd = new FormData();
-      fd.append('phoneNumber', regPhone);
+      fd.append('phoneNumber', trimmedPhone);
       
       const res = await fetch('/Account/Register?handler=SendOtp', {
         method: 'POST',
@@ -64,7 +65,7 @@ export default function AuthModals() {
         setOtpMsg({ text: 'Đang kiểm tra mã...', type: 'muted' });
         try {
           const fd = new FormData();
-          fd.append('phoneNumber', regPhone);
+          fd.append('phoneNumber', regPhone.trim());
           fd.append('otpCode', regOtp.trim());
 
           const res = await fetch('/Account/Register?handler=VerifyOtp', {
@@ -90,6 +91,10 @@ export default function AuthModals() {
   // Đăng ký tài khoản
   const handleRegister = async (e) => {
     e.preventDefault();
+    if (!otpVerified) {
+      setRegMsg({ text: 'Vui lòng nhận và xác minh mã OTP (SMS) trước khi tạo tài khoản.', isError: true });
+      return;
+    }
     if (regPassword !== regConfirmPassword) {
       setRegMsg({ text: 'Mật khẩu và xác nhận mật khẩu không khớp.', isError: true });
       return;

@@ -84,23 +84,54 @@ const getInitialDbState = () => {
   };
 };
 
+let memoryDb = null;
+
+const ensureDbDefaults = (db) => {
+  if (!db) db = {};
+  if (!Array.isArray(db.users)) db.users = [];
+  if (!Array.isArray(db.otps)) db.otps = [];
+  if (!Array.isArray(db.applications)) db.applications = [];
+  if (!Array.isArray(db.units)) db.units = [];
+  if (!db.settings) db.settings = { countdownDeadline: '2026-08-20T17:00:00.000Z' };
+  return db;
+};
+
 export const getDb = () => {
-  if (!fs.existsSync(DB_FILE)) {
-    const initialState = getInitialDbState();
-    fs.writeFileSync(DB_FILE, JSON.stringify(initialState, null, 2), 'utf-8');
-    return initialState;
+  if (memoryDb) {
+    return ensureDbDefaults(memoryDb);
   }
+
+  if (!fs.existsSync(DB_FILE)) {
+    const initialState = ensureDbDefaults(getInitialDbState());
+    try {
+      fs.writeFileSync(DB_FILE, JSON.stringify(initialState, null, 2), 'utf-8');
+    } catch (e) {
+      console.warn('Could not write initial db.json to filesystem, using in-memory state:', e.message);
+    }
+    memoryDb = initialState;
+    return memoryDb;
+  }
+
   try {
     const content = fs.readFileSync(DB_FILE, 'utf-8');
-    return JSON.parse(content);
+    memoryDb = ensureDbDefaults(JSON.parse(content));
+    return memoryDb;
   } catch (error) {
     console.error('Error reading database file, resetting...', error);
-    const initialState = getInitialDbState();
-    fs.writeFileSync(DB_FILE, JSON.stringify(initialState, null, 2), 'utf-8');
-    return initialState;
+    const initialState = ensureDbDefaults(getInitialDbState());
+    try {
+      fs.writeFileSync(DB_FILE, JSON.stringify(initialState, null, 2), 'utf-8');
+    } catch (e) {}
+    memoryDb = initialState;
+    return memoryDb;
   }
 };
 
 export const saveDb = (data) => {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  memoryDb = ensureDbDefaults(data);
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), 'utf-8');
+  } catch (error) {
+    console.warn('Could not write to db.json (read-only filesystem or permission error):', error.message);
+  }
 };
