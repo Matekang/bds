@@ -17,10 +17,73 @@
       "passwordHash": "demo",
       "role": "user",
       "createdAt": "2026-08-06T14:48:23.560Z"
+    },
+    {
+      "id": "user-kh0902",
+      "fullName": "Hiếu Trịnh Hoàng",
+      "phoneNumber": "0932506801",
+      "email": "hieutrinhhoang@gmail.com",
+      "passwordHash": "demo",
+      "role": "user",
+      "createdAt": "2026-08-09T08:00:00.000Z"
+    },
+    {
+      "id": "user-uv8c0j4kf",
+      "fullName": "trinh hoang hieu",
+      "phoneNumber": "0584631288",
+      "email": "hieuthth121101@gmail.com",
+      "passwordHash": "hieuvip123",
+      "role": "user",
+      "createdAt": "2026-08-09T04:58:44.302Z"
     }
   ],
   "otps": [],
-  "applications": [],
+  "applications": [
+    {
+      "id": "HS-2026-0902",
+      "userId": "user-kh0902",
+      "maKH": "KH-0902",
+      "fullName": "Hiếu Trịnh Hoàng",
+      "phoneNumber": "0932506801",
+      "email": "hieutrinhhoang@gmail.com",
+      "cccdNumber": "035200008801",
+      "targetObject": "K1",
+      "status": "submitted",
+      "stage": 1,
+      "progressPercent": 50,
+      "notes": "Hồ sơ đợt 1 đang được thẩm duyệt bản mềm.",
+      "cccdImage": "/uploads/cccd-sample.jpg",
+      "documents": {
+        "doc1": {
+          "name": "Mẫu số 01_Đơn đăng ký mua.pdf",
+          "url": "/uploads/sample-doc1.pdf"
+        },
+        "doc2": {
+          "name": "Mẫu số 02_Giấy tờ chứng minh điều kiện nhà ở.pdf",
+          "url": "/uploads/sample-doc2.pdf"
+        },
+        "doc3": null,
+        "doc4": {
+          "name": "Bản sao y CCCD CT07.pdf",
+          "url": "/uploads/sample-doc4.pdf"
+        },
+        "doc5": {
+          "name": "Giấy chứng nhận kết hôn.pdf",
+          "url": "/uploads/sample-doc5.pdf"
+        },
+        "doc6": null,
+        "doc7": {
+          "name": "Xác nhận cư trú CT07.pdf",
+          "url": "/uploads/sample-doc7.pdf"
+        },
+        "doc8": null,
+        "doc9": null
+      },
+      "agreedTerms1": true,
+      "agreedTerms2": true,
+      "createdAt": "2026-08-09T09:30:00.000Z"
+    }
+  ],
   "units": [
     {
       "id": "B-101",

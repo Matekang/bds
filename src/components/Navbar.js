@@ -2,9 +2,11 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 export default function Navbar({ session }) {
   const [isClient, setIsClient] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     setIsClient(true);
@@ -13,6 +15,10 @@ export default function Navbar({ session }) {
       document.documentElement.style.setProperty('--nav-h', nav.offsetHeight + 'px');
     }
   }, []);
+
+  if (pathname?.startsWith('/admin')) {
+    return null;
+  }
 
   const handleLogout = async (e) => {
     e.preventDefault();

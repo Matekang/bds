@@ -3,27 +3,39 @@
 import React, { useState } from 'react';
 
 export default function AdminClient({ session, initialApplications, initialUnits, initialDeadline }) {
+  // Navigation Tabs
+  const [activeTab, setActiveTab] = useState('applications'); // 'overview' | 'applications' | 'units' | 'settings'
+
+  // Application Data States
   const [apps, setApps] = useState(initialApplications || []);
   const [selectedApp, setSelectedApp] = useState(null);
-  
-  // States cho form duyệt hồ sơ
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  // Form states cho Duyệt Hồ Sơ
   const [appStatus, setAppStatus] = useState('');
+  const [appStage, setAppStage] = useState(1);
   const [appNotes, setAppNotes] = useState('');
   const [appMessage, setAppMessage] = useState('');
+  const [previewDoc, setPreviewDoc] = useState(null);
 
-  // States cho quản lý bảng hàng căn hộ
+  // Units / Inventory States
   const [units, setUnits] = useState(initialUnits || []);
   const [unitFloor, setUnitFloor] = useState(1);
+  const [unitTypeFilter, setUnitTypeFilter] = useState('all');
   const [selectedUnit, setSelectedUnit] = useState(null);
   const [unitStatus, setUnitStatus] = useState('');
   const [unitMessage, setUnitMessage] = useState('');
 
-  // States cho cài đặt thời hạn nộp hồ sơ
+  // Settings States
   const [deadlineVal, setDeadlineVal] = useState(initialDeadline || '');
   const [settingsMessage, setSettingsMessage] = useState('');
 
-  // Lọc căn hộ theo tầng hiện tại
-  const filteredUnits = units.filter(u => u.floor === parseInt(unitFloor, 10));
+  // Logout Handler
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    window.location.href = '/';
+  };
 
   // --- Reload Helpers ---
   const reloadApplications = async () => {
@@ -59,7 +71,6 @@ export default function AdminClient({ session, initialApplications, initialUnits
   };
 
   // --- Actions ---
-  // Cập nhật hồ sơ
   const handleUpdateApp = async (e) => {
     e.preventDefault();
     if (!selectedApp) return;
@@ -69,7 +80,7 @@ export default function AdminClient({ session, initialApplications, initialUnits
       const res = await fetch(`/api/applications/${selectedApp.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: appStatus, notes: appNotes })
+        body: JSON.stringify({ status: appStatus, notes: appNotes, stage: appStage })
       });
       const data = await res.json();
 
@@ -84,31 +95,12 @@ export default function AdminClient({ session, initialApplications, initialUnits
     }
   };
 
-  // Cập nhật căn hộ
   const handleUpdateUnit = async (e) => {
     e.preventDefault();
     if (!selectedUnit) return;
 
     setUnitMessage('');
     try {
-      // Vì API /api/units/route.js POST chỉ nhận đặt chỗ, ta giả lập cập nhật bảng hàng của admin 
-      // thông qua việc gửi trực tiếp trạng thái mong muốn bằng api. Ta sẽ cập nhật database JSON qua việc gửi body.
-      // Để đồng bộ, admin toggle cũng sẽ thay đổi trạng thái của căn hộ.
-      // Hãy tạo thêm API route cụ thể cho cập nhật căn hộ từ Admin nếu cần, hoặc ta xử lý cập nhật trực tiếp.
-      // Để đơn giản, ta cho phép admin đặt chỗ hoặc giải phóng căn hộ. 
-      // Hãy gửi trạng thái: ta viết một API phụ hoặc xử lý trong route chính.
-      // Hãy thiết kế route POST /api/units nhận body có thể cập nhật trạng thái trực tiếp của Admin.
-      // Lấy code cũ: ta cho phép admin update status qua api này.
-      const res = await fetch('/api/units', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ unitId: selectedUnit.id, status: unitStatus }) // Ta xử lý trạng thái trong API route nếu admin gửi
-      });
-      // Khoan đã, API route POST hiện tại chỉ toggle 'reserved' cho user.
-      // Hãy viết một endpoint riêng hoặc mở rộng POST `/api/units` để lưu trạng thái trực tiếp nếu gửi từ Admin!
-      // Đúng rồi, hãy viết một endpoint admin riêng tại `/api/admin/units/route.js` hoặc gọi PUT `/api/units`.
-      // Hãy kiểm tra xem: ta có thể thêm route handler PUT trong `src/app/api/units/route.js` để cập nhật trạng thái căn hộ của admin!
-      // Đó là giải pháp cực kỳ sạch sẽ và khoa học!
       const updateRes = await fetch(`/api/units`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -127,7 +119,6 @@ export default function AdminClient({ session, initialApplications, initialUnits
     }
   };
 
-  // Cập nhật cài đặt đếm ngược
   const handleUpdateSettings = async (e) => {
     e.preventDefault();
     setSettingsMessage('');
@@ -141,7 +132,7 @@ export default function AdminClient({ session, initialApplications, initialUnits
       const data = await res.json();
 
       if (data.success) {
-        setSettingsMessage('🎉 Đã cập nhật hạn chót nộp hồ sơ thành công!');
+        setSettingsMessage('🎉 Đã cập nhật hạn chót nộp hồ sơ!');
       } else {
         setSettingsMessage(`⚠️ Lỗi: ${data.message}`);
       }
@@ -152,7 +143,8 @@ export default function AdminClient({ session, initialApplications, initialUnits
 
   const handleSelectApp = (app) => {
     setSelectedApp(app);
-    setAppStatus(app.status);
+    setAppStatus(app.status || 'submitted');
+    setAppStage(app.stage || 1);
     setAppNotes(app.notes || '');
     setAppMessage('');
   };
@@ -163,47 +155,374 @@ export default function AdminClient({ session, initialApplications, initialUnits
     setUnitMessage('');
   };
 
+  // Filtered lists
+  const filteredApps = apps.filter(app => {
+    const matchesSearch = 
+      app.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      app.id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      app.phoneNumber?.includes(searchQuery) ||
+      app.cccdNumber?.includes(searchQuery);
+
+    const matchesStatus = statusFilter === 'all' || app.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  const filteredUnits = units.filter(u => {
+    const matchesFloor = u.floor === parseInt(unitFloor, 10);
+    const matchesType = unitTypeFilter === 'all' || u.type === unitTypeFilter;
+    return matchesFloor && matchesType;
+  });
+
+  // Calculate Metrics
+  const totalAppsCount = apps.length;
+  const reviewingAppsCount = apps.filter(a => a.status === 'reviewing' || a.status === 'submitted').length;
+  const approvedAppsCount = apps.filter(a => a.status === 'approved').length;
+  const rejectedAppsCount = apps.filter(a => a.status === 'rejected').length;
+
+  const totalUnits = units.length;
+  const availableUnitsCount = units.filter(u => u.status === 'available').length;
+  const reservedUnitsCount = units.filter(u => u.status === 'reserved').length;
+  const soldUnitsCount = units.filter(u => u.status === 'sold').length;
+
   return (
-    <div className="bg-light py-5" style={{ minHeight: '90vh' }}>
-      <div className="container">
-        {/* Header Admin */}
-        <div className="card border-0 shadow-sm mb-4 p-4 text-white bg-dark" style={{ borderRadius: '16px' }}>
-          <h2 className="fw-bold mb-1">⚙️ TRANG QUẢN TRỊ VIÊN HAPRO</h2>
-          <p className="text-light text-opacity-75 mb-0">
-            Xin chào, <strong>{session?.fullName}</strong>. Quản lý hồ sơ đăng ký, bảng hàng căn hộ và cài đặt đồng hồ đếm ngược.
-          </p>
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f1f5f9', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+
+      {/* 1. CORPORATE SIDEBAR (Dark Navy Bar #0f172a) */}
+      <aside style={{ width: '270px', backgroundColor: '#0f172a', color: '#f8fafc', display: 'flex', flexDirection: 'column', flexShrink: 0, boxShadow: '4px 0 24px rgba(0,0,0,0.12)' }}>
+        
+        {/* Brand Header */}
+        <div style={{ padding: '24px 20px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: '#059669', color: '#fff', display: 'flex', alignItems: 'center', justifyCenter: 'center', fontWeight: 'bold', fontSize: '20px' }}>
+              🛡️
+            </div>
+            <div>
+              <div style={{ fontWeight: '800', fontSize: '16px', letterSpacing: '0.5px', color: '#ffffff' }}>
+                HAPRO ADMIN
+              </div>
+              <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Quản lý Nhà Ở Xã Hội
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="row g-4">
-          {/* TAB 1: DUYỆT HỒ SƠ */}
-          <div className="col-md-12 col-lg-8">
-            <div className="card border-0 shadow-sm p-4 h-100" style={{ borderRadius: '16px' }}>
-              <h4 className="fw-bold text-emerald mb-3">Danh Sách Hồ Sơ Đăng Ký</h4>
-              
-              {apps.length === 0 ? (
-                <div className="text-center py-5 text-muted border border-dashed rounded-3">
-                  Hiện chưa có hồ sơ nào được gửi.
+        {/* Sidebar Menu Nav */}
+        <div style={{ padding: '20px 12px', flexGrow: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', padding: '0 12px 8px 12px' }}>
+            Menu Quản Trị
+          </div>
+
+          <button 
+            onClick={() => setActiveTab('overview')}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '12px 16px', borderRadius: '10px', border: 'none',
+              backgroundColor: activeTab === 'overview' ? '#059669' : 'transparent', color: activeTab === 'overview' ? '#fff' : '#cbd5e1',
+              fontWeight: activeTab === 'overview' ? '700' : '500', cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '18px' }}>📊</span>
+              <span>Tổng Quan Hệ Thống</span>
+            </div>
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('applications')}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '12px 16px', borderRadius: '10px', border: 'none',
+              backgroundColor: activeTab === 'applications' ? '#059669' : 'transparent', color: activeTab === 'applications' ? '#fff' : '#cbd5e1',
+              fontWeight: activeTab === 'applications' ? '700' : '500', cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '18px' }}>📁</span>
+              <span>Duyệt Hồ Sơ Đăng Ký</span>
+            </div>
+            {reviewingAppsCount > 0 && (
+              <span style={{ backgroundColor: activeTab === 'applications' ? '#fff' : '#ef4444', color: activeTab === 'applications' ? '#059669' : '#fff', fontSize: '11px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '12px' }}>
+                {reviewingAppsCount}
+              </span>
+            )}
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('units')}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '12px 16px', borderRadius: '10px', border: 'none',
+              backgroundColor: activeTab === 'units' ? '#059669' : 'transparent', color: activeTab === 'units' ? '#fff' : '#cbd5e1',
+              fontWeight: activeTab === 'units' ? '700' : '500', cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '18px' }}>🏢</span>
+              <span>Bảng Hàng Căn Hộ</span>
+            </div>
+            <span style={{ fontSize: '11px', color: '#94a3b8' }}>{availableUnitsCount}/{totalUnits}</span>
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('settings')}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '12px 16px', borderRadius: '10px', border: 'none',
+              backgroundColor: activeTab === 'settings' ? '#059669' : 'transparent', color: activeTab === 'settings' ? '#fff' : '#cbd5e1',
+              fontWeight: activeTab === 'settings' ? '700' : '500', cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '18px' }}>⚙️</span>
+              <span>Cài Đặt Đợt Nhận</span>
+            </div>
+          </button>
+
+          <a 
+            href="/"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '12px', width: '100%', padding: '12px 16px', borderRadius: '10px',
+              color: '#94a3b8', textDecoration: 'none', marginTop: 'auto', fontSize: '14px'
+            }}
+          >
+            <span>🌐</span>
+            <span>Trở về Website Dân Dụng</span>
+          </a>
+        </div>
+
+        {/* Admin Profile Footer */}
+        <div style={{ padding: '16px 20px', borderTop: '1px solid rgba(255,255,255,0.1)', backgroundColor: '#020617', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: '#3b82f6', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '14px' }}>
+              A
+            </div>
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#fff' }}>{session?.fullName || 'Admin Hapro'}</div>
+              <div style={{ fontSize: '10px', color: '#10b981', fontWeight: 'bold' }}>● SYSTEM ADMIN</div>
+            </div>
+          </div>
+
+          <button onClick={handleLogout} style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '8px', padding: '6px 10px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
+            Thoát
+          </button>
+        </div>
+      </aside>
+
+      {/* 2. MAIN CONTENT WRAPPER */}
+      <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', overflowX: 'hidden' }}>
+        
+        {/* Top Console Bar */}
+        <header style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase' }}>
+              Hệ thống Quản trị Hapro / {activeTab.toUpperCase()}
+            </div>
+            <h4 style={{ margin: 0, fontWeight: '800', color: '#0f172a' }}>
+              {activeTab === 'overview' && '📊 Thống Kê Tổng Quan & Báo Cáo'}
+              {activeTab === 'applications' && '📁 Quản Lý & Duyệt Hồ Sơ Đăng Ký'}
+              {activeTab === 'units' && '🏢 Quản Lý Bảng Hàng & Đặt Chỗ Căn Hộ'}
+              {activeTab === 'settings' && '⚙️ Cài Đặt Hệ Thống & Thời Hạn Nộp'}
+            </h4>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <span style={{ fontSize: '13px', backgroundColor: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '6px 14px', borderRadius: '20px', fontWeight: 'bold' }}>
+              🟢 Máy chủ: Hoạt động bình thường
+            </span>
+
+            <button 
+              onClick={() => { reloadApplications(); reloadUnits(); }}
+              style={{ backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '20px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}
+            >
+              🔄 Tải lại dữ liệu
+            </button>
+          </div>
+        </header>
+
+        {/* Dashboard Body Area */}
+        <main style={{ padding: '32px', flexGrow: 1 }}>
+
+          {/* TAB 1: OVERVIEW ANALYTICS */}
+          {activeTab === 'overview' && (
+            <div>
+              {/* KPI Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '32px' }}>
+                
+                <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '16px', boxShadow: '0 2px 10px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b', fontSize: '13px', fontWeight: 'bold' }}>
+                    <span>TỔNG HỒ SƠ</span>
+                    <span>📁</span>
+                  </div>
+                  <div style={{ fontSize: '32px', fontWeight: '900', color: '#0f172a', marginTop: '8px' }}>{totalAppsCount}</div>
+                  <div style={{ fontSize: '12px', color: '#10b981', fontWeight: 'bold', marginTop: '4px' }}>Đợt 1 - NOXH Marina Living</div>
                 </div>
-              ) : (
+
+                <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '16px', boxShadow: '0 2px 10px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b', fontSize: '13px', fontWeight: 'bold' }}>
+                    <span>ĐANG THẨM ĐỊNH</span>
+                    <span>⏳</span>
+                  </div>
+                  <div style={{ fontSize: '32px', fontWeight: '900', color: '#d97706', marginTop: '8px' }}>{reviewingAppsCount}</div>
+                  <div style={{ fontSize: '12px', color: '#d97706', fontWeight: 'bold', marginTop: '4px' }}>Cần xử lý bản mềm/cứng</div>
+                </div>
+
+                <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '16px', boxShadow: '0 2px 10px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b', fontSize: '13px', fontWeight: 'bold' }}>
+                    <span>ĐÃ DỰỆT SUẤT MUA</span>
+                    <span>✅</span>
+                  </div>
+                  <div style={{ fontSize: '32px', fontWeight: '900', color: '#059669', marginTop: '8px' }}>{approvedAppsCount}</div>
+                  <div style={{ fontSize: '12px', color: '#059669', fontWeight: 'bold', marginTop: '4px' }}>Đủ điều kiện mua nhà</div>
+                </div>
+
+                <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '16px', boxShadow: '0 2px 10px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#64748b', fontSize: '13px', fontWeight: 'bold' }}>
+                    <span>CĂN HỘ ĐÃ ĐẶT/BÁN</span>
+                    <span>🏢</span>
+                  </div>
+                  <div style={{ fontSize: '32px', fontWeight: '900', color: '#2563eb', marginTop: '8px' }}>{reservedUnitsCount + soldUnitsCount} / {totalUnits}</div>
+                  <div style={{ fontSize: '12px', color: '#2563eb', fontWeight: 'bold', marginTop: '4px' }}>Tỷ lệ lấp đầy: {Math.round(((reservedUnitsCount + soldUnitsCount) / (totalUnits || 1)) * 100)}%</div>
+                </div>
+
+              </div>
+
+              {/* Status Breakdown Charts Section */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '16px', boxShadow: '0 2px 10px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0' }}>
+                  <h5 style={{ fontWeight: '800', color: '#0f172a', marginBottom: '20px' }}>Phân Loại Trạng Thái Hồ Sơ</h5>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>
+                        <span>Đã phê duyệt ({approvedAppsCount})</span>
+                        <span style={{ color: '#059669' }}>{totalAppsCount ? Math.round((approvedAppsCount/totalAppsCount)*100) : 0}%</span>
+                      </div>
+                      <div style={{ height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${totalAppsCount ? (approvedAppsCount/totalAppsCount)*100 : 0}%`, backgroundColor: '#059669' }}></div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>
+                        <span>Đang thẩm định ({reviewingAppsCount})</span>
+                        <span style={{ color: '#d97706' }}>{totalAppsCount ? Math.round((reviewingAppsCount/totalAppsCount)*100) : 0}%</span>
+                      </div>
+                      <div style={{ height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${totalAppsCount ? (reviewingAppsCount/totalAppsCount)*100 : 0}%`, backgroundColor: '#d97706' }}></div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>
+                        <span>Từ chối / Yêu cầu sửa ({rejectedAppsCount})</span>
+                        <span style={{ color: '#ef4444' }}>{totalAppsCount ? Math.round((rejectedAppsCount/totalAppsCount)*100) : 0}%</span>
+                      </div>
+                      <div style={{ height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${totalAppsCount ? (rejectedAppsCount/totalAppsCount)*100 : 0}%`, backgroundColor: '#ef4444' }}></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '16px', boxShadow: '0 2px 10px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0' }}>
+                  <h5 style={{ fontWeight: '800', color: '#0f172a', marginBottom: '20px' }}>Trạng Thái Giỏ Hàng Căn Hộ</h5>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>
+                        <span>Còn trống ({availableUnitsCount})</span>
+                        <span style={{ color: '#10b981' }}>{Math.round((availableUnitsCount/totalUnits)*100)}%</span>
+                      </div>
+                      <div style={{ height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${(availableUnitsCount/totalUnits)*100}%`, backgroundColor: '#10b981' }}></div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>
+                        <span>Đã giữ chỗ ({reservedUnitsCount})</span>
+                        <span style={{ color: '#f59e0b' }}>{Math.round((reservedUnitsCount/totalUnits)*100)}%</span>
+                      </div>
+                      <div style={{ height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${(reservedUnitsCount/totalUnits)*100}%`, backgroundColor: '#f59e0b' }}></div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>
+                        <span>Đã bán ({soldUnitsCount})</span>
+                        <span style={{ color: '#64748b' }}>{Math.round((soldUnitsCount/totalUnits)*100)}%</span>
+                      </div>
+                      <div style={{ height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${(soldUnitsCount/totalUnits)*100}%`, backgroundColor: '#64748b' }}></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: APPLICATIONS MANAGER */}
+          {activeTab === 'applications' && (
+            <div style={{ display: 'grid', gridTemplateColumns: selectedApp ? '1fr 420px' : '1fr', gap: '24px' }}>
+              
+              {/* Left Column: Applications List */}
+              <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 10px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0' }}>
+                
+                {/* Search & Filter bar */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', gap: '16px', flexWrap: 'wrap' }}>
+                  <input 
+                    type="text" 
+                    placeholder="🔍 Tìm theo Họ tên, SĐT, CCCD, Mã HS..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid #cbd5e1', width: '280px', fontSize: '14px' }}
+                  />
+
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {['all', 'submitted', 'reviewing', 'approved', 'rejected'].map(st => (
+                      <button 
+                        key={st}
+                        onClick={() => setStatusFilter(st)}
+                        style={{
+                          padding: '8px 14px', borderRadius: '8px', border: 'none', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer',
+                          backgroundColor: statusFilter === st ? '#059669' : '#f1f5f9', color: statusFilter === st ? '#fff' : '#475569'
+                        }}
+                      >
+                        {st === 'all' ? 'Tất cả' :
+                         st === 'submitted' ? 'Mới nộp' :
+                         st === 'reviewing' ? 'Đang duyệt' :
+                         st === 'approved' ? 'Đã duyệt' : 'Từ chối'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Applications Table */}
                 <div className="table-responsive">
                   <table className="table table-hover align-middle">
-                    <thead>
+                    <thead className="table-light fs-7 text-uppercase" style={{ color: '#475569' }}>
                       <tr>
                         <th>Mã HS</th>
-                        <th>Họ tên</th>
+                        <th>Khách hàng</th>
                         <th>Số điện thoại</th>
                         <th>Đối tượng</th>
+                        <th>Tiến độ</th>
                         <th>Trạng thái</th>
-                        <th>Hành động</th>
+                        <th>Thẩm định</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {apps.map((app) => (
-                        <tr key={app.id} className={selectedApp?.id === app.id ? 'table-success' : ''}>
-                          <td className="fw-bold">{app.id.toUpperCase()}</td>
-                          <td>{app.fullName}</td>
-                          <td>{app.phoneNumber}</td>
-                          <td className="small text-muted">{app.targetObject}</td>
+                      {filteredApps.map(app => (
+                        <tr key={app.id} style={{ backgroundColor: selectedApp?.id === app.id ? '#f0fdf4' : 'transparent', cursor: 'pointer' }} onClick={() => handleSelectApp(app)}>
+                          <td style={{ fontWeight: 'bold', color: '#0f172a' }}>{app.id}</td>
+                          <td>
+                            <div style={{ fontWeight: 'bold', color: '#1e293b' }}>{app.fullName}</div>
+                            <div style={{ fontSize: '11px', color: '#64748b' }}>CCCD: {app.cccdNumber || 'Chưa cập nhật'}</div>
+                          </td>
+                          <td style={{ fontSize: '13px', fontWeight: '600' }}>{app.phoneNumber}</td>
+                          <td><span className="badge bg-light text-dark border">{app.targetObject || 'K1'}</span></td>
+                          <td>
+                            <span style={{ fontWeight: 'bold', color: '#059669', fontSize: '13px' }}>{app.progressPercent || 50}%</span>
+                          </td>
                           <td>
                             <span className={`badge px-2.5 py-1.5 fs-8 rounded-pill ${
                               app.status === 'approved' ? 'bg-success' :
@@ -212,15 +531,12 @@ export default function AdminClient({ session, initialApplications, initialUnits
                             }`}>
                               {app.status === 'approved' ? 'Đã duyệt' :
                                app.status === 'rejected' ? 'Từ chối' :
-                               app.status === 'reviewing' ? 'Thẩm định' : 'Mới nộp'}
+                               app.status === 'reviewing' ? 'Đang duyệt' : 'Mới nộp'}
                             </span>
                           </td>
                           <td>
-                            <button 
-                              className="btn btn-emerald btn-sm rounded-pill fw-bold"
-                              onClick={() => handleSelectApp(app)}
-                            >
-                              🔍 Xem
+                            <button className="btn btn-emerald btn-sm rounded-pill px-3 py-1 fs-7 fw-bold" onClick={() => handleSelectApp(app)}>
+                              🔍 Xem tệp
                             </button>
                           </td>
                         </tr>
@@ -228,227 +544,279 @@ export default function AdminClient({ session, initialApplications, initialUnits
                     </tbody>
                   </table>
                 </div>
-              )}
-            </div>
-          </div>
 
-          {/* CỘT PHẢI: CHI TIẾT DUYỆT HỒ SƠ */}
-          <div className="col-md-12 col-lg-4">
-            <div className="card border-0 shadow-sm p-4" style={{ borderRadius: '16px' }}>
-              <h4 className="fw-bold text-emerald mb-3">Thẩm Định Hồ Sơ</h4>
-              
-              {selectedApp ? (
-                <div>
-                  <div className="p-3 bg-light rounded-3 mb-3 fs-7 text-dark">
-                    <p className="mb-1">Họ tên: <strong>{selectedApp.fullName}</strong></p>
-                    <p className="mb-1">Số điện thoại: <strong>{selectedApp.phoneNumber}</strong></p>
-                    <p className="mb-1">Email: <strong>{selectedApp.email || 'Chưa cung cấp'}</strong></p>
-                    <p className="mb-1">Ngày nộp: <strong>{new Date(selectedApp.createdAt).toLocaleDateString('vi-VN')}</strong></p>
-                    
-                    <div className="mt-3 border-top pt-2">
-                      <span className="fw-bold d-block mb-1">Tài liệu minh chứng:</span>
-                      <ul className="list-unstyled mb-0">
-                        {Object.entries(selectedApp.documents).map(([key, val]) => (
-                          <li key={key} className="mb-1">
-                            {val ? (
-                              <a href={val} target="_blank" rel="noopener noreferrer" className="text-emerald fw-semibold">
-                                📄 {key === 'cccdFront' ? 'CCCD Mặt trước' :
-                                     key === 'cccdBack' ? 'CCCD Mặt sau' :
-                                     key === 'residency' ? 'Xác nhận cư trú' : 'Chứng nhận thu nhập'}
-                              </a>
-                            ) : (
-                              <span className="text-muted">❌ Thiếu file: {key}</span>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+              </div>
+
+              {/* Right Column: Detailed Application Inspector & Review Drawer */}
+              {selectedApp && (
+                <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 10px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0', position: 'sticky', top: '24px' }}>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e2e8f0' }}>
+                    <h5 style={{ fontWeight: '800', color: '#0f172a', margin: 0 }}>Thẩm Định Hồ Sơ</h5>
+                    <button onClick={() => setSelectedApp(null)} style={{ border: 'none', background: 'transparent', fontSize: '18px', cursor: 'pointer' }}>✖</button>
                   </div>
 
                   {appMessage && (
-                    <div className="alert alert-info py-2 small" role="alert">
-                      {appMessage}
-                    </div>
+                    <div className="alert alert-success py-2 small mb-3">{appMessage}</div>
                   )}
 
+                  {/* Customer info card */}
+                  <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', marginBottom: '16px', fontSize: '13px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span style={{ color: '#64748b' }}>Khách hàng:</span>
+                      <strong style={{ color: '#0f172a' }}>{selectedApp.fullName}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span style={{ color: '#64748b' }}>SĐT:</span>
+                      <strong>{selectedApp.phoneNumber}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span style={{ color: '#64748b' }}>Mã KH:</span>
+                      <span>{selectedApp.maKH || 'KH-0902'}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#64748b' }}>CCCD:</span>
+                      <strong>{selectedApp.cccdNumber || '—'}</strong>
+                    </div>
+                  </div>
+
+                  {/* Documents Checklist */}
+                  <div style={{ marginBottom: '20px' }}>
+                    <h6 style={{ fontWeight: '700', fontSize: '13px', color: '#334155', marginBottom: '8px' }}>📄 Danh mục tệp minh chứng:</h6>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '220px', overflowY: 'auto' }}>
+                      {selectedApp.cccdImage && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', backgroundColor: '#ecfdf5', borderRadius: '8px', fontSize: '12px' }}>
+                          <span style={{ fontWeight: 'bold', color: '#047857' }}>🪪 Ảnh CCCD / VNeID</span>
+                          <a href={selectedApp.cccdImage} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline-success py-0 px-2 fs-8">Xem 👁</a>
+                        </div>
+                      )}
+
+                      {selectedApp.documents && typeof selectedApp.documents === 'object' && Object.entries(selectedApp.documents).map(([k, docObj]) => (
+                        <div key={k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', backgroundColor: docObj ? '#f1f5f9' : '#fff1f2', borderRadius: '8px', fontSize: '12px' }}>
+                          <span style={{ fontWeight: docObj ? '600' : 'normal', color: docObj ? '#334155' : '#e11d48' }}>
+                            {docObj ? `📄 ${docObj.name || k}` : `❌ Thiếu: ${k.toUpperCase()}`}
+                          </span>
+                          {docObj && (
+                            <button 
+                              type="button"
+                              className="btn btn-sm btn-outline-primary py-0 px-2 fs-8" 
+                              onClick={() => setPreviewDoc(docObj)}
+                            >
+                              Xem 👁
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Approval Form */}
                   <form onSubmit={handleUpdateApp}>
                     <div className="mb-3">
-                      <label className="form-label fw-bold">Trạng thái hồ sơ</label>
+                      <label className="form-label fw-bold small text-dark">Giai đoạn thẩm định</label>
                       <select 
-                        className="form-select" 
-                        value={appStatus}
-                        onChange={(e) => setAppStatus(e.target.value)}
+                        className="form-select form-select-sm" 
+                        value={appStage}
+                        onChange={(e) => setAppStage(parseInt(e.target.value, 10))}
                       >
-                        <option value="submitted">Đã tiếp nhận (Mới nộp)</option>
-                        <option value="reviewing">Đang kiểm duyệt, thẩm định</option>
-                        <option value="approved">Đã phê duyệt (Đủ điều kiện)</option>
-                        <option value="rejected">Bị từ chối hồ sơ</option>
+                        <option value={1}>Giai đoạn 1: Nộp hồ sơ</option>
+                        <option value={2}>Giai đoạn 2: Thẩm duyệt bản mềm</option>
+                        <option value={3}>Giai đoạn 3: Thẩm duyệt bản cứng</option>
+                        <option value={4}>Giai đoạn 4: Thẩm duyệt suất mua</option>
                       </select>
                     </div>
 
                     <div className="mb-3">
-                      <label className="form-label fw-bold">Ghi chú gửi người nộp</label>
+                      <label className="form-label fw-bold small text-dark">Trạng thái phê duyệt</label>
+                      <select 
+                        className="form-select form-select-sm" 
+                        value={appStatus}
+                        onChange={(e) => setAppStatus(e.target.value)}
+                      >
+                        <option value="submitted">Đã tiếp nhận (Mới nộp)</option>
+                        <option value="reviewing">Đang thẩm định kiểm duyệt</option>
+                        <option value="approved">Đã phê duyệt (Đủ điều kiện)</option>
+                        <option value="rejected">Bị từ chối (Yêu cầu bổ sung)</option>
+                      </select>
+                    </div>
+
+                    <div className="mb-3">
+                      <label className="form-label fw-bold small text-dark">Ghi chú phản hồi khách hàng</label>
                       <textarea 
-                        className="form-control" 
+                        className="form-control form-control-sm" 
                         rows="3"
-                        placeholder="VD: Hồ sơ hợp lệ, mời mang bản chính tới văn phòng..."
+                        placeholder="VD: Hồ sơ bản mềm hợp lệ. Mời khách hàng mang bản chính đến văn phòng..."
                         value={appNotes}
                         onChange={(e) => setAppNotes(e.target.value)}
                       ></textarea>
                     </div>
 
-                    <button type="submit" className="btn btn-emerald w-100 rounded-pill py-2.5">
+                    <button type="submit" className="btn btn-emerald w-100 rounded-pill py-2 fw-bold shadow-sm" style={{ backgroundColor: '#059669', borderColor: '#059669' }}>
                       💾 Lưu kết quả thẩm định
                     </button>
                   </form>
-                </div>
-              ) : (
-                <div className="text-center py-5 text-muted border border-dashed rounded-3">
-                  Chọn một hồ sơ ở bảng bên trái để thực hiện phê duyệt hoặc từ chối.
+
                 </div>
               )}
-            </div>
-          </div>
-        </div>
 
-        {/* PHÂN HỆ 2: QUẢN LÝ CĂN HỘ & BẢNG HÀNG */}
-        <div className="row g-4 mt-4">
-          <div className="col-md-12 col-lg-8">
-            <div className="card border-0 shadow-sm p-4" style={{ borderRadius: '16px' }}>
-              <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-                <h4 className="fw-bold text-emerald mb-0">Quản Lý Bảng Hàng Căn Hộ</h4>
-                
-                {/* Chọn tầng lọc */}
-                <div className="d-flex align-items-center gap-2">
-                  <label className="fw-bold text-nowrap">Chọn tầng:</label>
-                  <select 
-                    className="form-select form-select-sm" 
-                    style={{ width: '120px' }}
-                    value={unitFloor}
-                    onChange={(e) => {
-                      setUnitFloor(Number(e.target.value));
-                      setSelectedUnit(null);
-                    }}
-                  >
-                    {[1,2,3,4,5,6,7,8,9,10,11,12,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30].map(f => (
-                      <option key={f} value={f}>Tầng {f}</option>
-                    ))}
-                  </select>
+            </div>
+          )}
+
+          {/* TAB 3: APARTMENT INVENTORY MAP */}
+          {activeTab === 'units' && (
+            <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 10px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0' }}>
+              
+              <div style={{ display: 'flex', justifyBetween: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+                <h5 style={{ fontWeight: '800', color: '#0f172a', margin: 0 }}>Quản Lý Bảng Hàng &amp; Đặt Chỗ</h5>
+
+                {/* Floor selector & Type filter */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <label style={{ fontSize: '13px', fontWeight: 'bold' }}>Tầng:</label>
+                    <select 
+                      value={unitFloor} 
+                      onChange={(e) => setUnitFloor(parseInt(e.target.value, 10))}
+                      style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', fontWeight: 'bold' }}
+                    >
+                      {[1,2,3,4,5,6,7,8,9,10,11,12,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30].map(f => (
+                        <option key={f} value={f}>Tầng {f}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <label style={{ fontSize: '13px', fontWeight: 'bold' }}>Loại căn:</label>
+                    <select 
+                      value={unitTypeFilter} 
+                      onChange={(e) => setUnitTypeFilter(e.target.value)}
+                      style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                    >
+                      <option value="all">Tất cả loại căn</option>
+                      <option value="Studio">Studio</option>
+                      <option value="1PN">1 Phòng Ngủ</option>
+                      <option value="2PN">2 Phòng Ngủ</option>
+                      <option value="3PN">3 Phòng Ngủ</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
-              {/* Lưới căn hộ */}
-              <div className="row g-3">
-                {filteredUnits.map((unit) => (
-                  <div className="col-6 col-sm-4 col-md-3" key={unit.id}>
-                    <div 
-                      className={`card border cursor-pointer lift ${
-                        unit.status === 'sold' ? 'bg-secondary text-white' :
-                        unit.status === 'reserved' ? 'border-warning bg-warning bg-opacity-10 text-dark' :
-                        'border-success bg-success bg-opacity-10 text-dark'
-                      } ${selectedUnit?.id === unit.id ? 'border-primary border-3' : ''}`}
-                      onClick={() => handleSelectUnit(unit)}
-                      style={{ borderRadius: '12px' }}
-                    >
-                      <div className="card-body p-3 text-center">
-                        <h6 className="fw-bold mb-0">{unit.roomNumber}</h6>
-                        <span className="small d-block" style={{ fontSize: '0.75rem', opacity: 0.8 }}>
-                          {unit.type} • {unit.area}m²
-                        </span>
-                        <span className="small d-block fw-bold mt-1 text-uppercase" style={{ fontSize: '0.7rem' }}>
-                          {unit.status === 'sold' ? 'Đã bán' :
-                           unit.status === 'reserved' ? 'Giữ chỗ' : 'Còn trống'}
-                        </span>
-                      </div>
+              {/* Units Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+                {filteredUnits.map(unit => (
+                  <div 
+                    key={unit.id}
+                    onClick={() => handleSelectUnit(unit)}
+                    style={{
+                      padding: '16px', borderRadius: '12px', border: '2px solid', cursor: 'pointer', transition: 'all 0.15s',
+                      borderColor: selectedUnit?.id === unit.id ? '#2563eb' : (unit.status === 'sold' ? '#cbd5e1' : unit.status === 'reserved' ? '#fde047' : '#86efac'),
+                      backgroundColor: unit.status === 'sold' ? '#f8fafc' : unit.status === 'reserved' ? '#fefce8' : '#f0fdf4'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <strong style={{ fontSize: '16px', color: '#0f172a' }}>{unit.roomNumber}</strong>
+                      <span className="badge bg-secondary-subtle text-dark fs-8">{unit.type}</span>
+                    </div>
+
+                    <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}>Diện tích: {unit.area} m²</div>
+
+                    <div style={{ fontSize: '11px', fontWeight: 'bold', color: unit.status === 'sold' ? '#64748b' : unit.status === 'reserved' ? '#d97706' : '#059669' }}>
+                      {unit.status === 'available' ? '🟢 Còn trống' : unit.status === 'reserved' ? '🟡 Đã giữ chỗ' : '🔴 Đã bán'}
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
 
-          {/* CỘT PHẢI: CHI TIẾT CẬP NHẬT CĂN HỘ */}
-          <div className="col-md-12 col-lg-4">
-            <div className="card border-0 shadow-sm p-4 h-100" style={{ borderRadius: '16px' }}>
-              <h4 className="fw-bold text-emerald mb-3">Cập Nhật Căn Hộ</h4>
-              
-              {selectedUnit ? (
-                <div>
-                  <div className="p-3 bg-light rounded-3 mb-3 fs-7">
-                    <p className="mb-1">Số phòng: <strong>{selectedUnit.roomNumber}</strong></p>
-                    <p className="mb-1">Tầng: <strong>{selectedUnit.floor}</strong></p>
-                    <p className="mb-1">Loại: <strong>{selectedUnit.type} ({selectedUnit.area} m²)</strong></p>
-                    <p className="mb-0">Trạng thái hiện tại: <strong className="text-uppercase text-emerald">{selectedUnit.status}</strong></p>
-                  </div>
+              {/* Edit Unit Modal / Panel */}
+              {selectedUnit && (
+                <div style={{ backgroundColor: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+                  <h6 style={{ fontWeight: '800', color: '#0f172a', marginBottom: '12px' }}>✏️ Cập Nhật Trạng Thái Căn Hộ: {selectedUnit.roomNumber}</h6>
 
                   {unitMessage && (
-                    <div className="alert alert-info py-2 small" role="alert">
-                      {unitMessage}
-                    </div>
+                    <div className="alert alert-info py-2 small mb-3">{unitMessage}</div>
                   )}
 
-                  <form onSubmit={handleUpdateUnit}>
-                    <div className="mb-3">
-                      <label className="form-label fw-bold">Thay đổi trạng thái căn hộ</label>
+                  <form onSubmit={handleUpdateUnit} style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                    <div style={{ width: '200px' }}>
                       <select 
-                        className="form-select" 
+                        className="form-select form-select-sm"
                         value={unitStatus}
                         onChange={(e) => setUnitStatus(e.target.value)}
                       >
-                        <option value="available">Còn trống (Mở bán)</option>
-                        <option value="reserved">Đang giữ chỗ (Khóa tạm thời)</option>
-                        <option value="sold">Đã bán chính thức</option>
+                        <option value="available">🟢 Còn trống (Cho phép đặt)</option>
+                        <option value="reserved">🟡 Đã đặt giữ chỗ (Khóa căn)</option>
+                        <option value="sold">🔴 Đã hoàn tất bán (Sold)</option>
                       </select>
                     </div>
 
-                    <button type="submit" className="btn btn-emerald w-100 rounded-pill py-2.5">
-                      💾 Cập nhật bảng hàng
+                    <button type="submit" className="btn btn-emerald btn-sm rounded-pill px-4 fw-bold">
+                      💾 Lưu thay đổi căn {selectedUnit.roomNumber}
                     </button>
                   </form>
                 </div>
-              ) : (
-                <div className="text-center py-5 text-muted border border-dashed rounded-3">
-                  Chọn một căn hộ ở lưới bên trái để thay đổi trạng thái bán (Trống/Giữ chỗ/Đã bán).
-                </div>
               )}
-            </div>
-          </div>
-        </div>
 
-        {/* PHÂN HỆ 3: CÀI ĐẶT ĐẾM NGƯỢC */}
-        <div className="card border-0 shadow-sm p-4 mt-4" style={{ borderRadius: '16px' }}>
-          <h4 className="fw-bold text-emerald mb-3">Cấu Hình Đồng Hồ Đếm Ngược Hạn Hồ Sơ</h4>
-          
-          {settingsMessage && (
-            <div className="alert alert-success py-2 small" role="alert">
-              {settingsMessage}
             </div>
           )}
 
-          <form onSubmit={handleUpdateSettings} className="row align-items-end g-3">
-            <div className="col-md-8">
-              <label className="form-label fw-bold">Thời gian hạn chót nộp hồ sơ (Countdown Deadline)</label>
-              <input 
-                type="datetime-local" 
-                className="form-control"
-                value={deadlineVal.slice(0, 16)} // Cắt chuỗi ISO để hiển thị trong input datetime-local
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val) {
-                    setDeadlineVal(new Date(val).toISOString());
-                  }
-                }}
-                required 
-              />
+          {/* TAB 4: SYSTEM SETTINGS */}
+          {activeTab === 'settings' && (
+            <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 10px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0', maxWidth: '600px' }}>
+              <h5 style={{ fontWeight: '800', color: '#0f172a', marginBottom: '16px' }}>⚙️ Cài Đặt Hạn Chót Nộp Hồ Sơ Đợt 1</h5>
+
+              {settingsMessage && (
+                <div className="alert alert-success py-2 small mb-3">{settingsMessage}</div>
+              )}
+
+              <form onSubmit={handleUpdateSettings}>
+                <div className="mb-3">
+                  <label className="form-label fw-bold small text-dark">Hạn chót đếm ngược (ISO Date Format)</label>
+                  <input 
+                    type="text" 
+                    className="form-control"
+                    value={deadlineVal}
+                    onChange={(e) => setDeadlineVal(e.target.value)}
+                  />
+                  <div className="form-text small text-muted">VD: 2026-08-21T17:00:00.000Z</div>
+                </div>
+
+                <button type="submit" className="btn btn-emerald rounded-pill px-4 py-2 fw-bold">
+                  💾 Lưu cài đặt thời gian
+                </button>
+              </form>
             </div>
-            <div className="col-md-4">
-              <button type="submit" className="btn btn-emerald w-100 rounded-pill py-2.5 fw-bold">
-                💾 Cập nhật hạn chót
-              </button>
-            </div>
-          </form>
-        </div>
+          )}
+
+        </main>
       </div>
+
+      {/* DOCUMENT PREVIEW MODAL */}
+      {previewDoc && (
+        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
+          <div className="modal-dialog modal-lg modal-dialog-centered">
+            <div className="modal-content rounded-3 border-0 shadow">
+              <div className="modal-header bg-dark text-white">
+                <h6 className="modal-title fw-bold">📄 Xem Tệp Thẩm Định: {previewDoc.name || 'Tài liệu'}</h6>
+                <button type="button" className="btn-close btn-close-white" onClick={() => setPreviewDoc(null)}></button>
+              </div>
+              <div className="modal-body text-center py-4">
+                <div className="p-4 bg-light rounded border mb-3">
+                  <span className="fs-1 d-block mb-2">📁</span>
+                  <strong className="d-block text-dark mb-1">{previewDoc.name}</strong>
+                  <a href={previewDoc.url} target="_blank" rel="noreferrer" className="btn btn-success btn-sm rounded-pill px-4 py-2 fw-bold mt-2">
+                    ⬇ Mở / Tải tệp về máy
+                  </a>
+                </div>
+              </div>
+              <div className="modal-footer bg-light">
+                <button type="button" className="btn btn-secondary btn-sm rounded-pill px-3" onClick={() => setPreviewDoc(null)}>Đóng</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
