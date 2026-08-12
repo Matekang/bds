@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const getRoleInfo = (role) => {
   switch (role) {
@@ -44,6 +44,11 @@ export default function AdminClient({ session, initialApplications, initialUnits
   const pageSize = 10;
   const [officerFilter, setOfficerFilter] = useState('all');
   const [shiftFilter, setShiftFilter] = useState('all');
+
+  // Reset trang về 1 khi thay đổi bộ lọc
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [stageFilter, statusFilter, kFilter, searchQuery, officerFilter, shiftFilter]);
 
   // Form states cho Duyệt Hồ Sơ
   const [appStatus, setAppStatus] = useState('');
