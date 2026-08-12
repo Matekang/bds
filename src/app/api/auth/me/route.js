@@ -6,12 +6,12 @@ export async function GET() {
   try {
     const session = await getSession();
     if (!session) {
-      return NextResponse.json({ session: null, message: 'No session found' }, { status: 401 });
+      return NextResponse.json({ success: false, session: null, message: 'No session found' }, { status: 200 });
     }
     const db = getDb();
     const user = db.users.find(u => u.id === session.userId);
-    return NextResponse.json({ session, userFound: !!user, userIds: db.users.map(u => u.id) });
+    return NextResponse.json({ success: true, session, userFound: !!user });
   } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
