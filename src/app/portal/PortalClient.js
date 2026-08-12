@@ -1592,27 +1592,23 @@ export default function PortalClient({ session, initialApplications }) {
                                   <strong className="text-success fs-7">{cccdNumber || qrParsedData.cccdNumber}</strong>
                                 </div>
                                 <div className="col-12 col-sm-6 col-md-4">
-                                  <span className="text-muted d-block fs-8">2. Số CMND cũ:</span>
-                                  <strong>{oldCmnd || qrParsedData.oldCmnd || 'Không có'}</strong>
-                                </div>
-                                <div className="col-12 col-sm-6 col-md-4">
-                                  <span className="text-muted d-block fs-8">3. Họ và tên:</span>
+                                  <span className="text-muted d-block fs-8">2. Họ và tên:</span>
                                   <strong className="text-uppercase text-dark">{fullName || qrParsedData.fullName}</strong>
                                 </div>
                                 <div className="col-12 col-sm-6 col-md-4">
-                                  <span className="text-muted d-block fs-8">4. Ngày sinh:</span>
+                                  <span className="text-muted d-block fs-8">3. Ngày sinh:</span>
                                   <strong>{dob || qrParsedData.dob}</strong>
                                 </div>
                                 <div className="col-12 col-sm-6 col-md-4">
-                                  <span className="text-muted d-block fs-8">5. Giới tính:</span>
+                                  <span className="text-muted d-block fs-8">4. Giới tính:</span>
                                   <strong>{gender || qrParsedData.gender}</strong>
                                 </div>
                                 <div className="col-12 col-sm-6 col-md-4">
-                                  <span className="text-muted d-block fs-8">6. Ngày cấp thẻ:</span>
+                                  <span className="text-muted d-block fs-8">5. Ngày cấp thẻ:</span>
                                   <strong>{issueDate || qrParsedData.issueDate}</strong>
                                 </div>
                                 <div className="col-12">
-                                  <span className="text-muted d-block fs-8">7. Nơi đăng ký thường trú:</span>
+                                  <span className="text-muted d-block fs-8">6. Nơi đăng ký thường trú:</span>
                                   <strong>{address || qrParsedData.address}</strong>
                                 </div>
                               </div>
@@ -1704,38 +1700,31 @@ export default function PortalClient({ session, initialApplications }) {
                               <div className="row g-2">
                                 <div className="col-12 col-sm-6 col-md-4">
                                   <label className="form-label fs-8 fw-semibold mb-1">Số CCCD (12 số) <span className="text-danger">*</span></label>
-                                  <input type="text" className="form-control form-control-sm" value={cccdNumber} onChange={(e) => setCccdNumber(e.target.value)} placeholder="VD: 035200008801" required />
-                                </div>
-                                <div className="col-12 col-sm-6 col-md-4">
-                                  <label className="form-label fs-8 fw-semibold mb-1">Số CMND cũ (nếu có)</label>
-                                  <input type="text" className="form-control form-control-sm" value={oldCmnd} onChange={(e) => setOldCmnd(e.target.value)} placeholder="VD: 123456789" />
+                                  <input type="text" className="form-control form-control-sm bg-light" value={cccdNumber || qrParsedData?.cccdNumber || ''} readOnly disabled title="Thông tin tự động lấy từ Căn cước công dân" required />
                                 </div>
                                 <div className="col-12 col-sm-6 col-md-4">
                                   <label className="form-label fs-8 fw-semibold mb-1">Họ và tên <span className="text-danger">*</span></label>
-                                  <input type="text" className="form-control form-control-sm" value={fullName || session?.fullName || ''} onChange={(e) => setFullName(e.target.value)} placeholder="VD: NGUYỄN VĂN A" required />
+                                  <input type="text" className="form-control form-control-sm bg-light fw-bold text-uppercase" value={fullName || qrParsedData?.fullName || session?.fullName || ''} readOnly disabled title="Họ tên tự động lấy từ Căn cước công dân" required />
                                 </div>
-                                <div className="col-12 col-sm-6 col-md-3">
+                                <div className="col-12 col-sm-6 col-md-4">
                                   <label className="form-label fs-8 fw-semibold mb-1">Ngày sinh (DD/MM/YYYY)</label>
-                                  <input type="text" className="form-control form-control-sm" value={dob} onChange={(e) => setDob(e.target.value)} placeholder="VD: 15/08/1992" />
+                                  <input type="text" className="form-control form-control-sm bg-light" value={dob || qrParsedData?.dob || ''} readOnly disabled title="Ngày sinh tự động lấy từ Căn cước công dân" />
                                 </div>
-                                <div className="col-12 col-sm-6 col-md-3">
+                                <div className="col-12 col-sm-6 col-md-4">
                                   <label className="form-label fs-8 fw-semibold mb-1">Giới tính</label>
-                                  <select className="form-select form-select-sm" value={gender} onChange={(e) => setGender(e.target.value)}>
-                                    <option value="Nam">Nam</option>
-                                    <option value="Nữ">Nữ</option>
-                                  </select>
+                                  <input type="text" className="form-control form-control-sm bg-light" value={gender || qrParsedData?.gender || 'Nam'} readOnly disabled title="Giới tính tự động lấy từ Căn cước công dân" />
                                 </div>
-                                <div className="col-12 col-sm-6 col-md-3">
+                                <div className="col-12 col-sm-6 col-md-4">
                                   <label className="form-label fs-8 fw-semibold mb-1">Ngày cấp thẻ</label>
-                                  <input type="text" className="form-control form-control-sm" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} placeholder="VD: 10/05/2021" />
+                                  <input type="text" className="form-control form-control-sm bg-light" value={issueDate || qrParsedData?.issueDate || ''} readOnly disabled title="Ngày cấp tự động lấy từ Căn cước công dân" />
                                 </div>
-                                <div className="col-12 col-sm-6 col-md-3">
-                                  <label className="form-label fs-8 fw-semibold mb-1">Email (Lấy từ lúc đăng ký tài khoản)</label>
-                                  <input type="email" className="form-control form-control-sm bg-light" value={email || session?.email || ''} onChange={(e) => setEmail(e.target.value)} placeholder="Email khi đăng ký tài khoản" readOnly title="Email tự động lấy từ thông tin tài khoản đăng ký" />
+                                <div className="col-12 col-sm-6 col-md-4">
+                                  <label className="form-label fs-8 fw-semibold mb-1">Email (Lấy từ tài khoản)</label>
+                                  <input type="email" className="form-control form-control-sm bg-light" value={email || session?.email || ''} readOnly disabled title="Email tự động lấy từ thông tin tài khoản đăng ký" />
                                 </div>
                                 <div className="col-12">
                                   <label className="form-label fs-8 fw-semibold mb-1">Địa chỉ đăng ký thường trú</label>
-                                  <input type="text" className="form-control form-control-sm" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="VD: Xã Thiên Lộc, Huyện Đông Anh, Hà Nội" />
+                                  <input type="text" className="form-control form-control-sm bg-light" value={address || qrParsedData?.address || ''} readOnly disabled title="Địa chỉ tự động lấy từ Căn cước công dân" />
                                 </div>
                               </div>
                             </div>
