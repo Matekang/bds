@@ -31,15 +31,20 @@ export async function getSession() {
   try {
     const rawData = Buffer.from(tokenCookie.value, 'base64').toString('utf-8');
     const session = JSON.parse(rawData);
+
+    if (!session || !session.userId) {
+      return null;
+    }
     
-    // Kiểm tra xem user có thực sự tồn tại trong DB không
+    // Thử tìm user trong DB nếu có, nếu không tìm thấy vẫn giữ thông tin từ session token
     const db = getDb();
     const user = db.users.find(u => u.id === session.userId);
-    if (!user) return null;
 
     return {
       ...session,
-      email: user.email || session.email || ''
+      fullName: user?.fullName || session.fullName || 'Người dùng',
+      role: user?.role || session.role || 'user',
+      email: user?.email || session.email || ''
     };
   } catch (error) {
     return null;

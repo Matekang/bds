@@ -376,6 +376,15 @@
       "passwordHash": "123456",
       "role": "user",
       "createdAt": "2026-08-12T00:42:55.107Z"
+    },
+    {
+      "id": "user-n2jfrnxvo",
+      "fullName": "tqh",
+      "phoneNumber": "0987658765",
+      "email": "hieu@gmail.com",
+      "passwordHash": "hieuvip123",
+      "role": "user",
+      "createdAt": "2026-08-12T02:53:30.151Z"
     }
   ],
   "otps": [
