@@ -4,11 +4,13 @@ import { getSession } from '@/lib/auth';
 import fs from 'fs';
 import path from 'path';
 
-// Tạo thư mục uploads nếu chưa tồn tại
+// Tạo thư mục uploads nếu chưa tồn tại (an toàn trên Vercel)
 const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+try {
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+} catch (e) {}
 
 export async function GET(request) {
   try {
@@ -95,6 +97,26 @@ export async function POST(request) {
       doc1: null, doc2: null, doc3: null, doc4: null, doc5: null, doc6: null, doc7: null, doc8: null, doc9: null
     };
 
+    // Helper lưu file an toàn (hỗ trợ môi trường đĩa Read-Only như Vercel)
+    const saveFileSafely = async (file, prefix) => {
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const ext = path.extname(file.name) || (file.type?.includes('image') ? '.jpg' : '.pdf');
+      const filename = `${prefix}-${session.userId}-${Date.now()}${ext}`;
+      
+      try {
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        const filePath = path.join(uploadDir, filename);
+        fs.writeFileSync(filePath, buffer);
+        return `/uploads/${filename}`;
+      } catch (err) {
+        console.warn('Cannot write to disk (Vercel read-only filesystem), fallback to Data URL:', err.message);
+        const mimeType = file.type || (ext === '.pdf' ? 'application/pdf' : 'image/jpeg');
+        return `data:${mimeType};base64,${buffer.toString('base64')}`;
+      }
+    };
+
     // Xử lý tệp CCCD mặt trước & mặt sau
     let cccdImage = existingApp?.cccdImage || null;
     let cccdFrontImage = existingApp?.cccdFrontImage || existingApp?.cccdImage || null;
@@ -102,23 +124,13 @@ export async function POST(request) {
 
     const cccdFrontFile = formData.get('cccdFrontFile') || formData.get('cccdFile');
     if (cccdFrontFile && cccdFrontFile instanceof File && cccdFrontFile.size > 0) {
-      const buffer = Buffer.from(await cccdFrontFile.arrayBuffer());
-      const ext = path.extname(cccdFrontFile.name) || '.jpg';
-      const filename = `cccd-front-${session.userId}-${Date.now()}${ext}`;
-      const filePath = path.join(uploadDir, filename);
-      fs.writeFileSync(filePath, buffer);
-      cccdFrontImage = `/uploads/${filename}`;
+      cccdFrontImage = await saveFileSafely(cccdFrontFile, 'cccd-front');
       cccdImage = cccdFrontImage;
     }
 
     const cccdBackFile = formData.get('cccdBackFile');
     if (cccdBackFile && cccdBackFile instanceof File && cccdBackFile.size > 0) {
-      const buffer = Buffer.from(await cccdBackFile.arrayBuffer());
-      const ext = path.extname(cccdBackFile.name) || '.jpg';
-      const filename = `cccd-back-${session.userId}-${Date.now()}${ext}`;
-      const filePath = path.join(uploadDir, filename);
-      fs.writeFileSync(filePath, buffer);
-      cccdBackImage = `/uploads/${filename}`;
+      cccdBackImage = await saveFileSafely(cccdBackFile, 'cccd-back');
     }
 
     // Xử lý các trường trích xuất từ QR CCCD
@@ -138,14 +150,10 @@ export async function POST(request) {
       const docKey = `doc${i}`;
       const file = formData.get(docKey);
       if (file && file instanceof File && file.size > 0) {
-        const buffer = Buffer.from(await file.arrayBuffer());
-        const ext = path.extname(file.name) || '.pdf';
-        const filename = `${session.userId}-${docKey}-${Date.now()}${ext}`;
-        const filePath = path.join(uploadDir, filename);
-        fs.writeFileSync(filePath, buffer);
+        const fileUrl = await saveFileSafely(file, docKey);
         docs[docKey] = {
           name: file.name,
-          url: `/uploads/${filename}`,
+          url: fileUrl,
           uploadedAt: new Date().toISOString()
         };
       }
