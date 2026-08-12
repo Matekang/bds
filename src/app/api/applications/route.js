@@ -12,6 +12,15 @@ try {
   }
 } catch (e) {}
 
+const sortAppsNewestFirst = (appsList) => {
+  return [...(appsList || [])].sort((a, b) => {
+    const timeA = new Date(a.createdAt || a.updatedAt || 0).getTime();
+    const timeB = new Date(b.createdAt || b.updatedAt || 0).getTime();
+    if (timeB !== timeA) return timeB - timeA;
+    return (b.id || '').localeCompare(a.id || '');
+  });
+};
+
 export async function GET(request) {
   try {
     const session = await getSession();
@@ -21,13 +30,13 @@ export async function GET(request) {
 
     const db = getDb();
     
-    // Nếu là admin, trả về toàn bộ hồ sơ
-    if (session.role === 'admin') {
-      return NextResponse.json({ success: true, applications: db.applications });
+    // Nếu là admin hoặc cán bộ, trả về toàn bộ hồ sơ mới nhất xếp đầu
+    if (session.role === 'admin' || session.role?.startsWith('officer_')) {
+      return NextResponse.json({ success: true, applications: sortAppsNewestFirst(db.applications) });
     }
 
     // Nếu là user thường, chỉ trả về hồ sơ của họ
-    const userApps = db.applications.filter(a => a.userId === session.userId);
+    const userApps = sortAppsNewestFirst(db.applications.filter(a => a.userId === session.userId));
     return NextResponse.json({ success: true, applications: userApps });
   } catch (error) {
     console.error('Error fetching applications:', error);
@@ -257,7 +266,7 @@ export async function POST(request) {
         createdAt: now.toISOString()
       };
 
-      db.applications.push(newApp);
+      db.applications.unshift(newApp);
       saveDb(db);
 
       return NextResponse.json({ success: true, message: 'Nộp hồ sơ thành công!', application: newApp });

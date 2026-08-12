@@ -263,6 +263,11 @@ export default function AdminClient({ session, initialApplications, initialUnits
     const matchesShift = shiftFilter === 'all' || app.shift === shiftFilter;
 
     return matchesSearch && matchesStatus && matchesStage && matchesK && matchesOfficer && matchesShift;
+  }).sort((a, b) => {
+    const timeA = new Date(a.createdAt || a.updatedAt || 0).getTime();
+    const timeB = new Date(b.createdAt || b.updatedAt || 0).getTime();
+    if (timeB !== timeA) return timeB - timeA;
+    return (b.id || '').localeCompare(a.id || '');
   });
 
   const totalPages = Math.ceil(filteredApps.length / pageSize) || 1;
