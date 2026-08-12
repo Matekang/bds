@@ -1,12 +1,13 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { initialUsers, initialApplications } from './initialData';
 
-const DB_FILE = path.join(process.cwd(), 'db.json');
+const PROJECT_DB_FILE = path.join(process.cwd(), 'db.json');
+const TMP_DB_FILE = path.join(os.tmpdir(), 'bds-db-v2.json');
 
 // Khởi tạo database mặc định
 const getInitialDbState = () => {
-  // Tạo danh sách căn hộ mẫu cho Tòa B
   const units = [];
   const floors = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30];
 
@@ -51,8 +52,6 @@ const getInitialDbState = () => {
   };
 };
 
-let memoryDb = null;
-
 const ensureDbDefaults = (db) => {
   if (!db) db = {};
   if (!Array.isArray(db.users) || db.users.length === 0) db.users = initialUsers || [];
@@ -66,41 +65,57 @@ const ensureDbDefaults = (db) => {
 };
 
 export const getDb = () => {
-  if (memoryDb) {
-    return ensureDbDefaults(memoryDb);
+  if (globalThis.__bds_memory_db) {
+    return ensureDbDefaults(globalThis.__bds_memory_db);
   }
 
-  if (!fs.existsSync(DB_FILE)) {
-    const initialState = ensureDbDefaults(getInitialDbState());
+  // 1. Đọc từ TMP_DB_FILE nếu có (file do saveDb vừa ghi trên Vercel /tmp)
+  if (fs.existsSync(TMP_DB_FILE)) {
     try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(initialState, null, 2), 'utf-8');
+      const content = fs.readFileSync(TMP_DB_FILE, 'utf-8');
+      globalThis.__bds_memory_db = ensureDbDefaults(JSON.parse(content));
+      return globalThis.__bds_memory_db;
     } catch (e) {
-      console.warn('Could not write initial db.json to filesystem, using in-memory state:', e.message);
+      console.error('Error reading TMP_DB_FILE:', e.message);
     }
-    memoryDb = initialState;
-    return memoryDb;
   }
 
-  try {
-    const content = fs.readFileSync(DB_FILE, 'utf-8');
-    memoryDb = ensureDbDefaults(JSON.parse(content));
-    return memoryDb;
-  } catch (error) {
-    console.error('Error reading database file, resetting...', error);
-    const initialState = ensureDbDefaults(getInitialDbState());
+  // 2. Đọc từ PROJECT_DB_FILE (gốc từ Git)
+  if (fs.existsSync(PROJECT_DB_FILE)) {
     try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(initialState, null, 2), 'utf-8');
-    } catch (e) {}
-    memoryDb = initialState;
-    return memoryDb;
+      const content = fs.readFileSync(PROJECT_DB_FILE, 'utf-8');
+      globalThis.__bds_memory_db = ensureDbDefaults(JSON.parse(content));
+      try {
+        fs.writeFileSync(TMP_DB_FILE, JSON.stringify(globalThis.__bds_memory_db, null, 2), 'utf-8');
+      } catch (e) {}
+      return globalThis.__bds_memory_db;
+    } catch (error) {
+      console.error('Error reading PROJECT_DB_FILE:', error.message);
+    }
   }
+
+  // 3. Fallback dùng getInitialDbState()
+  const initialState = ensureDbDefaults(getInitialDbState());
+  globalThis.__bds_memory_db = initialState;
+  try {
+    fs.writeFileSync(TMP_DB_FILE, JSON.stringify(initialState, null, 2), 'utf-8');
+  } catch (e) {}
+  return globalThis.__bds_memory_db;
 };
 
 export const saveDb = (data) => {
-  memoryDb = ensureDbDefaults(data);
+  const db = ensureDbDefaults(data);
+  globalThis.__bds_memory_db = db;
+
+  // Ghi vào PROJECT_DB_FILE nếu writable (Local environment)
   try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(memoryDb, null, 2), 'utf-8');
+    fs.writeFileSync(PROJECT_DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
+  } catch (error) {}
+
+  // Ghi vào TMP_DB_FILE (Luôn writable trên Vercel Serverless /tmp)
+  try {
+    fs.writeFileSync(TMP_DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
   } catch (error) {
-    console.warn('Could not write to db.json (read-only filesystem or permission error):', error.message);
+    console.warn('Could not write to TMP_DB_FILE:', error.message);
   }
 };

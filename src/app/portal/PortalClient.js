@@ -387,7 +387,24 @@ export default function PortalClient({ session, initialApplications }) {
       const res = await fetch('/api/applications');
       const data = await res.json();
       if (data.success) {
-        setApps(data.applications);
+        let list = data.applications || [];
+        if (typeof window !== 'undefined' && session?.userId) {
+          const cached = localStorage.getItem('bds_user_app_' + session.userId);
+          if (cached) {
+            try {
+              const localApp = JSON.parse(cached);
+              if (localApp && localApp.id) {
+                const existingIdx = list.findIndex(a => a.id === localApp.id || a.userId === session.userId);
+                if (existingIdx >= 0) {
+                  list[existingIdx] = { ...localApp, ...list[existingIdx] };
+                } else {
+                  list.unshift(localApp);
+                }
+              }
+            } catch(e) {}
+          }
+        }
+        setApps(list);
       }
     } catch (err) {
       console.error(err);
@@ -701,6 +718,11 @@ export default function PortalClient({ session, initialApplications }) {
 
       if (data.success) {
         setMessage({ text: '🎉 Nộp / Cập nhật hồ sơ thành công! Chuyển sang Bước 4 để theo dõi tiến độ.', type: 'success' });
+        if (data.application && typeof window !== 'undefined' && session?.userId) {
+          try {
+            localStorage.setItem('bds_user_app_' + session.userId, JSON.stringify(data.application));
+          } catch (e) {}
+        }
         reloadApplications();
         setCurrentFormStep(4);
       } else {
