@@ -11,8 +11,8 @@ export const metadata = {
 export default async function AdminPage() {
   const session = await getSession();
 
-  // Yêu cầu đăng nhập và vai trò phải là admin
-  if (!session || session.role !== 'admin') {
+  const isStaff = session && (session.role === 'admin' || session.role?.startsWith('officer_'));
+  if (!isStaff) {
     redirect('/?auth=login');
   }
 

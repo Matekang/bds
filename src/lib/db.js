@@ -28,14 +28,7 @@ const getInitialDbState = () => {
         area = 82.4;
       }
 
-      // Trạng thái ngẫu nhiên: 70% available, 10% reserved, 20% sold
-      const rand = Math.random();
-      let status = 'available';
-      if (rand > 0.8) {
-        status = 'sold';
-      } else if (rand > 0.7) {
-        status = 'reserved';
-      }
+      const status = 'available';
 
       units.push({
         id: roomNum,
@@ -51,30 +44,74 @@ const getInitialDbState = () => {
     }
   });
 
-  // Tài khoản Admin mặc định
+  // Tài khoản Admin cao cấp mặc định
   const defaultAdmin = {
     id: 'admin-id',
-    fullName: 'Quản trị viên Hapro',
+    fullName: 'Quản trị viên Hapro (Super Admin)',
     phoneNumber: '0999999999',
     email: 'admin@hapro.vn',
-    passwordHash: 'admin123', // Để đơn giản, ta lưu plain password hoặc mã hóa đơn giản trong demo
+    passwordHash: 'admin123',
     role: 'admin',
     createdAt: new Date().toISOString()
   };
 
-  // Tài khoản User mặc định
+  // Cán bộ Tổ tiếp nhận (Chỉ xử lý Giai đoạn 1)
+  const officerIntake = {
+    id: 'officer-intake-id',
+    fullName: 'Nguyễn Văn Tùng (Tổ tiếp nhận)',
+    phoneNumber: '0911111111',
+    email: 'tung.nv@hapro.vn',
+    passwordHash: 'intake123',
+    role: 'officer_intake',
+    createdAt: new Date().toISOString()
+  };
+
+  // Cán bộ Tổ kiểm soát (Chỉ xử lý Giai đoạn 2)
+  const officerControl = {
+    id: 'officer-control-id',
+    fullName: 'Lê Hoàng Nam (Tổ kiểm soát)',
+    phoneNumber: '0922222222',
+    email: 'nam.lh@hapro.vn',
+    passwordHash: 'control123',
+    role: 'officer_control',
+    createdAt: new Date().toISOString()
+  };
+
+  // Cán bộ Tiếp nhận bản gốc (Chỉ xử lý Giai đoạn 3)
+  const officerHardcopy = {
+    id: 'officer-hardcopy-id',
+    fullName: 'Trần Thị Mai (Tiếp nhận bản gốc)',
+    phoneNumber: '0933333333',
+    email: 'mai.tt@hapro.vn',
+    passwordHash: 'hardcopy123',
+    role: 'officer_hardcopy',
+    createdAt: new Date().toISOString()
+  };
+
+  // Cán bộ Lưu trữ (Chỉ quản lý Giai đoạn 4 & Căn hộ)
+  const officerArchive = {
+    id: 'officer-archive-id',
+    fullName: 'Phạm Quốc Bảo (Bộ phận lưu trữ)',
+    phoneNumber: '0944444444',
+    email: 'bao.pq@hapro.vn',
+    passwordHash: 'archive123',
+    role: 'officer_archive',
+    createdAt: new Date().toISOString()
+  };
+
+  // Tài khoản User người dân mặc định
   const defaultUser = {
     id: 'user-id',
     fullName: 'Đào Minh Hoàn',
     phoneNumber: '0901234567',
     email: 'hoan.dao@seabank.com.vn',
-    passwordHash: 'demo', // Trùng mật khẩu ví dụ ở README.md của hapro
+    passwordHash: 'demo',
     role: 'user',
     createdAt: new Date().toISOString()
   };
 
   return {
-    users: [defaultAdmin, defaultUser],
+    users: [defaultAdmin, officerIntake, officerControl, officerHardcopy, officerArchive, defaultUser],
     otps: [],
     applications: [],
     units,

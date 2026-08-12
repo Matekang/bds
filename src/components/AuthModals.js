@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 export default function AuthModals() {
   // States cho Đăng nhập
+  const [loginCccd, setLoginCccd] = useState('');
   const [loginPhone, setLoginPhone] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginMsg, setLoginMsg] = useState({ text: '', isError: false });
@@ -12,6 +13,7 @@ export default function AuthModals() {
 
   // States cho Đăng ký
   const [regFullName, setRegFullName] = useState('');
+  const [regCccd, setRegCccd] = useState('');
   const [regPhone, setRegPhone] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regOtp, setRegOtp] = useState('');
@@ -137,6 +139,28 @@ export default function AuthModals() {
     }
   };
 
+  // Tự động mở modal Đăng nhập nếu URL chứa ?auth=login
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      if (searchParams.get('auth') === 'login') {
+        const timer = setTimeout(() => {
+          const modalEl = document.getElementById('loginModal');
+          if (modalEl) {
+            if (window.bootstrap) {
+              const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+              modal.show();
+            } else {
+              const btn = document.querySelector('[data-bs-target="#loginModal"]');
+              if (btn) btn.click();
+            }
+          }
+        }, 200);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, []);
+
   // Đăng nhập
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -144,7 +168,7 @@ export default function AuthModals() {
 
     try {
       const fd = new FormData();
-      fd.append('Input.PhoneNumber', loginPhone);
+      fd.append('Input.PhoneNumber', loginPhone.trim());
       fd.append('Input.Password', loginPassword);
 
       const res = await fetch('/Account/Login', {
@@ -156,14 +180,14 @@ export default function AuthModals() {
       if (data.success) {
         // Tắt modal và redirect
         const modalEl = document.getElementById('loginModal');
-        if (modalEl) {
-          const bootstrap = window.bootstrap;
-          if (bootstrap) {
-            const modal = bootstrap.Modal.getInstance(modalEl);
-            if (modal) modal.hide();
-          }
+        if (modalEl && window.bootstrap) {
+          const modal = window.bootstrap.Modal.getInstance(modalEl) || window.bootstrap.Modal.getOrCreateInstance(modalEl);
+          if (modal) modal.hide();
         }
-        window.location.href = data.redirectUrl || '/portal';
+        // Chờ 150ms để đảm bảo server flush cookie Set-Cookie header trước khi navigate
+        setTimeout(() => {
+          window.location.replace(data.redirectUrl || '/portal');
+        }, 150);
       } else {
         setLoginMsg({ text: data.message, isError: true });
       }
@@ -174,28 +198,34 @@ export default function AuthModals() {
 
   // Chuyển đổi giữa Đăng ký và Đăng nhập
   const switchTo = (targetId) => {
-    const bootstrap = window.bootstrap;
-    if (!bootstrap) return;
-
     const loginModalEl = document.getElementById('loginModal');
     const registerModalEl = document.getElementById('registerModal');
 
-    if (targetId === 'registerModal') {
-      const loginModal = bootstrap.Modal.getInstance(loginModalEl) || bootstrap.Modal.getOrCreateInstance(loginModalEl);
-      loginModal.hide();
-      loginModalEl.addEventListener('hidden.bs.modal', function onHidden() {
-        loginModalEl.removeEventListener('hidden.bs.modal', onHidden);
-        const registerModal = bootstrap.Modal.getInstance(registerModalEl) || bootstrap.Modal.getOrCreateInstance(registerModalEl);
-        registerModal.show();
-      });
-    } else {
-      const registerModal = bootstrap.Modal.getInstance(registerModalEl) || bootstrap.Modal.getOrCreateInstance(registerModalEl);
-      registerModal.hide();
-      registerModalEl.addEventListener('hidden.bs.modal', function onHidden() {
-        registerModalEl.removeEventListener('hidden.bs.modal', onHidden);
+    const bootstrap = window.bootstrap;
+    if (bootstrap) {
+      if (targetId === 'registerModal') {
         const loginModal = bootstrap.Modal.getInstance(loginModalEl) || bootstrap.Modal.getOrCreateInstance(loginModalEl);
-        loginModal.show();
-      });
+        loginModal.hide();
+        loginModalEl?.addEventListener('hidden.bs.modal', function onHidden() {
+          loginModalEl.removeEventListener('hidden.bs.modal', onHidden);
+          const registerModal = bootstrap.Modal.getInstance(registerModalEl) || bootstrap.Modal.getOrCreateInstance(registerModalEl);
+          registerModal.show();
+        });
+      } else {
+        const registerModal = bootstrap.Modal.getInstance(registerModalEl) || bootstrap.Modal.getOrCreateInstance(registerModalEl);
+        registerModal.hide();
+        registerModalEl?.addEventListener('hidden.bs.modal', function onHidden() {
+          registerModalEl.removeEventListener('hidden.bs.modal', onHidden);
+          const loginModal = bootstrap.Modal.getInstance(loginModalEl) || bootstrap.Modal.getOrCreateInstance(loginModalEl);
+          loginModal.show();
+        });
+      }
+    } else {
+      // Fallback khi bootstrap script chưa sẵn sàng
+      const currentModal = targetId === 'registerModal' ? loginModalEl : registerModalEl;
+      const targetModal = targetId === 'registerModal' ? registerModalEl : loginModalEl;
+      if (currentModal) currentModal.style.display = 'none';
+      if (targetModal) targetModal.style.display = 'block';
     }
   };
 
@@ -210,7 +240,7 @@ export default function AuthModals() {
             </div>
             <div className="modal-body px-4 pb-4 pt-0">
               <h4 className="fw-bold text-center text-emerald mb-1">Đăng Nhập Hệ Thống</h4>
-              <p className="text-center text-muted small mb-4">Nhập số điện thoại để tiếp tục</p>
+              <p className="text-center text-muted small mb-4">Sử dụng <strong>Số CCCD (12 số)</strong> hoặc Số điện thoại để đăng nhập</p>
 
               {loginMsg.text && (
                 <div className={`alert ${loginMsg.isError ? 'alert-danger' : 'alert-success'} py-2`} role="alert">
@@ -220,11 +250,11 @@ export default function AuthModals() {
 
               <form onSubmit={handleLogin}>
                 <div className="mb-3">
-                  <label className="form-label fw-semibold">Số điện thoại đăng nhập</label>
+                  <label className="form-label fw-semibold">Tài khoản (Số CCCD / SĐT / Email)</label>
                   <input 
                     type="text" 
                     className="form-control" 
-                    placeholder="Số điện thoại" 
+                    placeholder="Nhập SĐT / Email / Số CCCD" 
                     value={loginPhone}
                     onChange={(e) => setLoginPhone(e.target.value)}
                     required 

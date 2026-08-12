@@ -2,7 +2,34 @@
 
 import React, { useState } from 'react';
 
+const getRoleInfo = (role) => {
+  switch (role) {
+    case 'officer_intake':
+      return { title: 'Tổ Tiếp Nhận', stage: 1, badge: '🔵 TỔ TIẾP NHẬN (GĐ 1)', allowedTabs: ['overview', 'applications'] };
+    case 'officer_control':
+      return { title: 'Tổ Kiểm Soát', stage: 2, badge: '🟣 TỔ KIỂM SOÁT (GĐ 2)', allowedTabs: ['overview', 'applications'] };
+    case 'officer_hardcopy':
+      return { title: 'Bộ Phận Bản Gốc', stage: 3, badge: '🟠 BỘ PHẬN BẢN GỐC (GĐ 3)', allowedTabs: ['overview', 'applications'] };
+    case 'officer_archive':
+      return { title: 'Bộ Phận Lưu Trữ', stage: 4, badge: '🟢 BỘ PHẬN LƯU TRỮ (GĐ 4)', allowedTabs: ['overview', 'applications', 'units'] };
+    case 'admin':
+    default:
+      return { title: 'Super Admin Hapro', stage: null, badge: '👑 SUPER ADMIN', allowedTabs: ['overview', 'applications', 'units', 'settings'] };
+  }
+};
+
+const isStageAllowed = (userRole, appStage) => {
+  if (!userRole || userRole === 'admin') return true;
+  if (userRole === 'officer_intake' && (appStage === 1 || !appStage)) return true;
+  if (userRole === 'officer_control' && appStage === 2) return true;
+  if (userRole === 'officer_hardcopy' && appStage === 3) return true;
+  if (userRole === 'officer_archive' && appStage === 4) return true;
+  return false;
+};
+
 export default function AdminClient({ session, initialApplications, initialUnits, initialDeadline }) {
+  const roleInfo = getRoleInfo(session?.role);
+
   // Navigation Tabs
   const [activeTab, setActiveTab] = useState('applications'); // 'overview' | 'applications' | 'units' | 'settings'
 
@@ -11,13 +38,65 @@ export default function AdminClient({ session, initialApplications, initialUnits
   const [selectedApp, setSelectedApp] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [stageFilter, setStageFilter] = useState('all'); // 'all' | 'intake' | 'control' | 'hardcopy' | 'archive' | 'returned' | 'wrong_k'
+  const [kFilter, setKFilter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+  const [officerFilter, setOfficerFilter] = useState('all');
+  const [shiftFilter, setShiftFilter] = useState('all');
 
   // Form states cho Duyệt Hồ Sơ
   const [appStatus, setAppStatus] = useState('');
   const [appStage, setAppStage] = useState(1);
   const [appNotes, setAppNotes] = useState('');
+  const [assignedOfficer, setAssignedOfficer] = useState('Nguyễn Văn Tùng');
+  const [shift, setShift] = useState('morning');
   const [appMessage, setAppMessage] = useState('');
   const [previewDoc, setPreviewDoc] = useState(null);
+
+  // Quick Action Handler
+  const handleExecuteAction = async (actionType, defaultNote = '') => {
+    if (!selectedApp) return;
+    setAppMessage('');
+
+    try {
+      const res = await fetch(`/api/applications/${selectedApp.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: actionType,
+          notes: appNotes || defaultNote,
+          assignedOfficer,
+          shift
+        })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setAppMessage(`🎉 Xử lý thành công [${actionType.toUpperCase()}]!`);
+        
+        // Tự động chuyển danh sách lọc sang đúng vị trí giai đoạn mới của hồ sơ
+        if (actionType === 'bypass_intake') {
+          setStageFilter('control');
+        } else if (actionType === 'approve_digital') {
+          setStageFilter('hardcopy');
+        } else if (actionType === 'archive') {
+          setStageFilter('archive');
+        } else if (actionType === 'return_to_citizen') {
+          setStageFilter('returned');
+        } else if (actionType === 'reject_wrong_k') {
+          setStageFilter('wrong_k');
+        }
+        setStatusFilter('all');
+
+        reloadApplications();
+      } else {
+        setAppMessage(`⚠️ Thất bại: ${data.message}`);
+      }
+    } catch (err) {
+      setAppMessage('⚠️ Lỗi kết nối máy chủ.');
+    }
+  };
 
   // Units / Inventory States
   const [units, setUnits] = useState(initialUnits || []);
@@ -163,9 +242,26 @@ export default function AdminClient({ session, initialApplications, initialUnits
       app.phoneNumber?.includes(searchQuery) ||
       app.cccdNumber?.includes(searchQuery);
 
-    const matchesStatus = statusFilter === 'all' || app.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesStatus = statusFilter === 'all' || app.status === statusFilter || (statusFilter === 'approved' && (app.status === 'approved' || app.status === 'luu_tru'));
+    
+    let matchesStage = true;
+    if (stageFilter === 'intake') matchesStage = app.status === 'submitted' || (app.stage === 1 && app.status !== 'returned_for_supplement' && app.status !== 'rejected_wrong_k');
+    else if (stageFilter === 'control') matchesStage = app.status === 'to_kiem_soat' || app.stage === 2;
+    else if (stageFilter === 'hardcopy') matchesStage = app.status === 'bo_sung_ban_goc' || app.stage === 3;
+    else if (stageFilter === 'archive') matchesStage = app.status === 'approved' || app.status === 'luu_tru' || app.stage === 4;
+    else if (stageFilter === 'returned') matchesStage = app.status === 'returned_for_supplement';
+    else if (stageFilter === 'wrong_k') matchesStage = app.status === 'rejected_wrong_k';
+
+    const matchesK = kFilter === 'all' || app.targetObject === kFilter || app.targetObject?.startsWith(kFilter);
+
+    const matchesOfficer = officerFilter === 'all' || app.assignedOfficer === officerFilter;
+    const matchesShift = shiftFilter === 'all' || app.shift === shiftFilter;
+
+    return matchesSearch && matchesStatus && matchesStage && matchesK && matchesOfficer && matchesShift;
   });
+
+  const totalPages = Math.ceil(filteredApps.length / pageSize) || 1;
+  const paginatedApps = filteredApps.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const filteredUnits = units.filter(u => {
     const matchesFloor = u.floor === parseInt(unitFloor, 10);
@@ -246,34 +342,38 @@ export default function AdminClient({ session, initialApplications, initialUnits
             )}
           </button>
 
-          <button 
-            onClick={() => setActiveTab('units')}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '12px 16px', borderRadius: '10px', border: 'none',
-              backgroundColor: activeTab === 'units' ? '#059669' : 'transparent', color: activeTab === 'units' ? '#fff' : '#cbd5e1',
-              fontWeight: activeTab === 'units' ? '700' : '500', cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ fontSize: '18px' }}>🏢</span>
-              <span>Bảng Hàng Căn Hộ</span>
-            </div>
-            <span style={{ fontSize: '11px', color: '#94a3b8' }}>{availableUnitsCount}/{totalUnits}</span>
-          </button>
+          {roleInfo.allowedTabs.includes('units') && (
+            <button 
+              onClick={() => setActiveTab('units')}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '12px 16px', borderRadius: '10px', border: 'none',
+                backgroundColor: activeTab === 'units' ? '#059669' : 'transparent', color: activeTab === 'units' ? '#fff' : '#cbd5e1',
+                fontWeight: activeTab === 'units' ? '700' : '500', cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '18px' }}>🏢</span>
+                <span>Bảng Hàng Căn Hộ</span>
+              </div>
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>{availableUnitsCount}/{totalUnits}</span>
+            </button>
+          )}
 
-          <button 
-            onClick={() => setActiveTab('settings')}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '12px 16px', borderRadius: '10px', border: 'none',
-              backgroundColor: activeTab === 'settings' ? '#059669' : 'transparent', color: activeTab === 'settings' ? '#fff' : '#cbd5e1',
-              fontWeight: activeTab === 'settings' ? '700' : '500', cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ fontSize: '18px' }}>⚙️</span>
-              <span>Cài Đặt Đợt Nhận</span>
-            </div>
-          </button>
+          {roleInfo.allowedTabs.includes('settings') && (
+            <button 
+              onClick={() => setActiveTab('settings')}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '12px 16px', borderRadius: '10px', border: 'none',
+                backgroundColor: activeTab === 'settings' ? '#059669' : 'transparent', color: activeTab === 'settings' ? '#fff' : '#cbd5e1',
+                fontWeight: activeTab === 'settings' ? '700' : '500', cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '18px' }}>⚙️</span>
+                <span>Cài Đặt Đợt Nhận</span>
+              </div>
+            </button>
+          )}
 
           <a 
             href="/"
@@ -290,12 +390,12 @@ export default function AdminClient({ session, initialApplications, initialUnits
         {/* Admin Profile Footer */}
         <div style={{ padding: '16px 20px', borderTop: '1px solid rgba(255,255,255,0.1)', backgroundColor: '#020617', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: '#3b82f6', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '14px' }}>
-              A
+            <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: '#059669', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '14px' }}>
+              {(session?.fullName || 'A').charAt(0)}
             </div>
             <div>
-              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#fff' }}>{session?.fullName || 'Admin Hapro'}</div>
-              <div style={{ fontSize: '10px', color: '#10b981', fontWeight: 'bold' }}>● SYSTEM ADMIN</div>
+              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#fff' }}>{session?.fullName || 'Cán bộ Hapro'}</div>
+              <div style={{ fontSize: '10px', color: '#34d399', fontWeight: 'bold' }}>{roleInfo.badge}</div>
             </div>
           </div>
 
@@ -477,23 +577,49 @@ export default function AdminClient({ session, initialApplications, initialUnits
                     style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid #cbd5e1', width: '280px', fontSize: '14px' }}
                   />
 
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    {['all', 'submitted', 'reviewing', 'approved', 'rejected'].map(st => (
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {[
+                      { id: 'all', label: '🌐 Tất cả' },
+                      { id: 'intake', label: '🔵 GĐ 1: Mới nộp' },
+                      { id: 'control', label: '🟣 GĐ 2: Tổ kiểm soát' },
+                      { id: 'hardcopy', label: '🟠 GĐ 3: Nộp bản gốc' },
+                      { id: 'archive', label: '🟢 GĐ 4: Đã duyệt' },
+                      { id: 'returned', label: '🔴 Trả về bổ sung' },
+                      { id: 'wrong_k', label: '❌ Sai nhóm K' }
+                    ].map(st => (
                       <button 
-                        key={st}
-                        onClick={() => setStatusFilter(st)}
+                        key={st.id}
+                        onClick={() => {
+                          setStageFilter(st.id);
+                          setStatusFilter('all');
+                        }}
                         style={{
-                          padding: '8px 14px', borderRadius: '8px', border: 'none', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer',
-                          backgroundColor: statusFilter === st ? '#059669' : '#f1f5f9', color: statusFilter === st ? '#fff' : '#475569'
+                          padding: '6px 12px', borderRadius: '16px', border: '1px solid ' + (stageFilter === st.id ? '#059669' : '#cbd5e1'), fontSize: '12px', fontWeight: 'bold', cursor: 'pointer',
+                          backgroundColor: stageFilter === st.id ? '#059669' : '#f8fafc', color: stageFilter === st.id ? '#fff' : '#475569'
                         }}
                       >
-                        {st === 'all' ? 'Tất cả' :
-                         st === 'submitted' ? 'Mới nộp' :
-                         st === 'reviewing' ? 'Đang duyệt' :
-                         st === 'approved' ? 'Đã duyệt' : 'Từ chối'}
+                        {st.label}
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* K-Group Filter Pills */}
+                <div className="d-flex align-items-center gap-1.5 flex-wrap mb-3 p-2 bg-light rounded-3 border">
+                  <span className="fw-bold fs-8 text-dark me-1">📋 Lọc theo Nhóm K (NĐ 100):</span>
+                  {['all', 'K1', 'K2', 'K3', 'K4', 'K5', 'K6', 'K7', 'K8', 'K9', 'K10', 'K11'].map(k => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => { setKFilter(k); setCurrentPage(1); }}
+                      style={{
+                        padding: '4px 10px', borderRadius: '14px', border: '1px solid ' + (kFilter === k ? '#0b6640' : '#cbd5e1'), fontSize: '11px', fontWeight: 'bold', cursor: 'pointer',
+                        backgroundColor: kFilter === k ? '#0b6640' : '#fff', color: kFilter === k ? '#fff' : '#334155'
+                      }}
+                    >
+                      {k === 'all' ? '🌐 Tất cả K' : k}
+                    </button>
+                  ))}
                 </div>
 
                 {/* Applications Table */}
@@ -511,38 +637,91 @@ export default function AdminClient({ session, initialApplications, initialUnits
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredApps.map(app => (
-                        <tr key={app.id} style={{ backgroundColor: selectedApp?.id === app.id ? '#f0fdf4' : 'transparent', cursor: 'pointer' }} onClick={() => handleSelectApp(app)}>
-                          <td style={{ fontWeight: 'bold', color: '#0f172a' }}>{app.id}</td>
-                          <td>
-                            <div style={{ fontWeight: 'bold', color: '#1e293b' }}>{app.fullName}</div>
-                            <div style={{ fontSize: '11px', color: '#64748b' }}>CCCD: {app.cccdNumber || 'Chưa cập nhật'}</div>
-                          </td>
-                          <td style={{ fontSize: '13px', fontWeight: '600' }}>{app.phoneNumber}</td>
-                          <td><span className="badge bg-light text-dark border">{app.targetObject || 'K1'}</span></td>
-                          <td>
-                            <span style={{ fontWeight: 'bold', color: '#059669', fontSize: '13px' }}>{app.progressPercent || 50}%</span>
-                          </td>
-                          <td>
-                            <span className={`badge px-2.5 py-1.5 fs-8 rounded-pill ${
-                              app.status === 'approved' ? 'bg-success' :
-                              app.status === 'rejected' ? 'bg-danger' :
-                              app.status === 'reviewing' ? 'bg-info text-dark' : 'bg-warning text-dark'
-                            }`}>
-                              {app.status === 'approved' ? 'Đã duyệt' :
-                               app.status === 'rejected' ? 'Từ chối' :
-                               app.status === 'reviewing' ? 'Đang duyệt' : 'Mới nộp'}
-                            </span>
-                          </td>
-                          <td>
-                            <button className="btn btn-emerald btn-sm rounded-pill px-3 py-1 fs-7 fw-bold" onClick={() => handleSelectApp(app)}>
-                              🔍 Xem tệp
-                            </button>
+                      {paginatedApps.length === 0 ? (
+                        <tr>
+                          <td colSpan="7" className="text-center py-4 text-muted fs-7">
+                            Không tìm thấy hồ sơ nào phù hợp với bộ lọc hiện tại.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        paginatedApps.map(app => (
+                          <tr key={app.id} style={{ backgroundColor: selectedApp?.id === app.id ? '#f0fdf4' : 'transparent', cursor: 'pointer' }} onClick={() => handleSelectApp(app)}>
+                            <td style={{ fontWeight: 'bold', color: '#0f172a' }}>{app.id}</td>
+                            <td>
+                              <div style={{ fontWeight: 'bold', color: '#1e293b' }}>{app.fullName}</div>
+                              <div style={{ fontSize: '11px', color: '#64748b' }}>CCCD: {app.cccdNumber || 'Chưa cập nhật'}</div>
+                            </td>
+                            <td style={{ fontSize: '13px', fontWeight: '600' }}>{app.phoneNumber}</td>
+                            <td><span className="badge bg-light text-dark border">{app.targetObject || 'K1'}</span></td>
+                            <td>
+                              <span style={{ fontWeight: 'bold', color: '#059669', fontSize: '13px' }}>{app.progressPercent || 50}%</span>
+                            </td>
+                            <td>
+                              <span className={`badge px-2.5 py-1.5 fs-8 rounded-pill ${
+                                (app.status === 'approved' || app.status === 'luu_tru') ? 'bg-success text-white' :
+                                app.status === 'to_kiem_soat' ? 'bg-primary text-white' :
+                                app.status === 'bo_sung_ban_goc' ? 'bg-info text-dark' :
+                                app.status === 'returned_for_supplement' ? 'bg-warning text-dark border border-warning' :
+                                app.status === 'rejected_wrong_k' ? 'bg-danger text-white' :
+                                app.status === 'rejected' ? 'bg-danger text-white' : 'bg-warning text-dark border border-warning'
+                              }`}>
+                                {app.status === 'approved' || app.status === 'luu_tru' ? '🟢 Đã duyệt / Lưu trữ' :
+                                 app.status === 'to_kiem_soat' ? '🟣 Tổ kiểm soát' :
+                                 app.status === 'bo_sung_ban_goc' ? '🟠 Chờ nộp bản gốc' :
+                                 app.status === 'returned_for_supplement' ? '🔴 Trả về bổ sung' :
+                                 app.status === 'rejected_wrong_k' ? '❌ Sai nhóm K' :
+                                 app.status === 'rejected' ? '❌ Từ chối' : '🟡 Mới nộp'}
+                              </span>
+                            </td>
+                            <td>
+                              <button className="btn btn-emerald btn-sm rounded-pill px-3 py-1 fs-7 fw-bold" onClick={() => handleSelectApp(app)}>
+                                🔍 Xem tệp
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
+                </div>
+
+                {/* PAGINATION CONTROLS */}
+                <div className="d-flex justify-content-between align-items-center mt-3 pt-3 border-top flex-wrap gap-2">
+                  <div className="text-muted fs-8">
+                    Hiển thị <strong>{filteredApps.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}</strong> – <strong>{Math.min(currentPage * pageSize, filteredApps.length)}</strong> trên tổng số <strong>{filteredApps.length}</strong> hồ sơ
+                  </div>
+
+                  <div className="d-flex align-items-center gap-1.5">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary rounded-pill px-2.5 py-1 fs-8 fw-semibold"
+                      disabled={currentPage === 1}
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    >
+                      ◀ Trang trước
+                    </button>
+
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                      <button
+                        key={page}
+                        type="button"
+                        className={`btn btn-sm rounded-circle fw-bold fs-8 ${currentPage === page ? 'btn-emerald text-white' : 'btn-light text-dark border'}`}
+                        style={{ width: '32px', height: '32px', padding: 0 }}
+                        onClick={() => setCurrentPage(page)}
+                      >
+                        {page}
+                      </button>
+                    ))}
+
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary rounded-pill px-2.5 py-1 fs-8 fw-semibold"
+                      disabled={currentPage >= totalPages}
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    >
+                      Trang sau ▶
+                    </button>
+                  </div>
                 </div>
 
               </div>
@@ -561,36 +740,70 @@ export default function AdminClient({ session, initialApplications, initialUnits
                   )}
 
                   {/* Customer info card */}
-                  <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', marginBottom: '16px', fontSize: '13px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <span style={{ color: '#64748b' }}>Khách hàng:</span>
-                      <strong style={{ color: '#0f172a' }}>{selectedApp.fullName}</strong>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <span style={{ color: '#64748b' }}>SĐT:</span>
-                      <strong>{selectedApp.phoneNumber}</strong>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <span style={{ color: '#64748b' }}>Mã KH:</span>
-                      <span>{selectedApp.maKH || 'KH-0902'}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#64748b' }}>CCCD:</span>
-                      <strong>{selectedApp.cccdNumber || '—'}</strong>
-                    </div>
-                  </div>
-
-                  {/* Documents Checklist */}
-                  <div style={{ marginBottom: '20px' }}>
-                    <h6 style={{ fontWeight: '700', fontSize: '13px', color: '#334155', marginBottom: '8px' }}>📄 Danh mục tệp minh chứng:</h6>
-                    
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '220px', overflowY: 'auto' }}>
-                      {selectedApp.cccdImage && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', backgroundColor: '#ecfdf5', borderRadius: '8px', fontSize: '12px' }}>
-                          <span style={{ fontWeight: 'bold', color: '#047857' }}>🪪 Ảnh CCCD / VNeID</span>
-                          <a href={selectedApp.cccdImage} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline-success py-0 px-2 fs-8">Xem 👁</a>
+                    <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', marginBottom: '16px', fontSize: '13px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span style={{ color: '#64748b' }}>Khách hàng:</span>
+                        <strong style={{ color: '#0f172a' }}>{selectedApp.fullName}</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span style={{ color: '#64748b' }}>SĐT:</span>
+                        <strong>{selectedApp.phoneNumber}</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span style={{ color: '#64748b' }}>Số CCCD (12 số):</span>
+                        <strong style={{ color: '#059669' }}>{selectedApp.cccdNumber || '—'}</strong>
+                      </div>
+                      {selectedApp.oldCmnd && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                          <span style={{ color: '#64748b' }}>Số CMND cũ:</span>
+                          <span>{selectedApp.oldCmnd}</span>
                         </div>
                       )}
+                      {selectedApp.dob && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                          <span style={{ color: '#64748b' }}>Ngày sinh / Giới tính:</span>
+                          <span>{selectedApp.dob} ({selectedApp.gender || 'Nam'})</span>
+                        </div>
+                      )}
+                      {selectedApp.issueDate && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                          <span style={{ color: '#64748b' }}>Ngày cấp CCCD:</span>
+                          <span>{selectedApp.issueDate}</span>
+                        </div>
+                      )}
+                      {selectedApp.address && (
+                        <div style={{ marginBottom: '6px' }}>
+                          <span style={{ color: '#64748b', display: 'block' }}>Thường trú:</span>
+                          <strong>{selectedApp.address}</strong>
+                        </div>
+                      )}
+                      {selectedApp.qrParsedData && (
+                        <div className="mt-2 pt-2 border-top">
+                          <span className="badge bg-success text-white px-2 py-1 fs-8">
+                            ✅ Mã QR CCCD hợp lệ (Trích xuất tự động)
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Documents Checklist */}
+                    <div style={{ marginBottom: '20px' }}>
+                      <h6 style={{ fontWeight: '700', fontSize: '13px', color: '#334155', marginBottom: '8px' }}>📄 Danh mục tệp minh chứng &amp; Thẻ CCCD 2 Mặt:</h6>
+                      
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '240px', overflowY: 'auto' }}>
+                        {(selectedApp.cccdFrontImage || selectedApp.cccdImage) && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', backgroundColor: '#ecfdf5', borderRadius: '8px', fontSize: '12px' }}>
+                            <span style={{ fontWeight: 'bold', color: '#047857' }}>🪪 Ảnh Mặt Trước CCCD</span>
+                            <a href={selectedApp.cccdFrontImage || selectedApp.cccdImage} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline-success py-0 px-2 fs-8">Xem 👁</a>
+                          </div>
+                        )}
+
+                        {selectedApp.cccdBackImage && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', backgroundColor: '#ecfdf5', borderRadius: '8px', fontSize: '12px' }}>
+                            <span style={{ fontWeight: 'bold', color: '#047857' }}>💳 Ảnh Mặt Sau CCCD</span>
+                            <a href={selectedApp.cccdBackImage} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline-success py-0 px-2 fs-8">Xem 👁</a>
+                          </div>
+                        )}
 
                       {selectedApp.documents && typeof selectedApp.documents === 'object' && Object.entries(selectedApp.documents).map(([k, docObj]) => (
                         <div key={k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', backgroundColor: docObj ? '#f1f5f9' : '#fff1f2', borderRadius: '8px', fontSize: '12px' }}>
@@ -611,54 +824,107 @@ export default function AdminClient({ session, initialApplications, initialUnits
                     </div>
                   </div>
 
-                  {/* Approval Form */}
-                  <form onSubmit={handleUpdateApp}>
-                    <div className="mb-3">
-                      <label className="form-label fw-bold small text-dark">Giai đoạn thẩm định</label>
-                      <select 
-                        className="form-select form-select-sm" 
-                        value={appStage}
-                        onChange={(e) => setAppStage(parseInt(e.target.value, 10))}
-                      >
-                        <option value={1}>Giai đoạn 1: Nộp hồ sơ</option>
-                        <option value={2}>Giai đoạn 2: Thẩm duyệt bản mềm</option>
-                        <option value={3}>Giai đoạn 3: Thẩm duyệt bản cứng</option>
-                        <option value={4}>Giai đoạn 4: Thẩm duyệt suất mua</option>
-                      </select>
+                  {/* Staff & Shift Assignment Section */}
+                  <div className="p-3 mb-3 bg-white border rounded-3">
+                    <h6 className="fw-bold text-dark fs-7 mb-2">👷 Phân công Cán bộ &amp; Ca làm việc:</h6>
+                    
+                    <div className="row g-2 mb-2">
+                      <div className="col-12 col-md-6">
+                        <label className="form-label fw-bold fs-8 text-secondary">Cán bộ thụ lý:</label>
+                        <select 
+                          className="form-select form-select-sm"
+                          value={assignedOfficer}
+                          onChange={(e) => setAssignedOfficer(e.target.value)}
+                        >
+                        <option value="Nguyễn Văn Tùng">Nguyễn Văn Tùng (Chuyên viên 1)</option>
+                          <option value="Trần Thị Mai">Trần Thị Mai (Chuyên viên 2)</option>
+                          <option value="Lê Hoàng Nam">Lê Hoàng Nam (Tổ Kiểm Soát)</option>
+                          <option value="Phạm Đức Anh">Phạm Đức Anh (Tổ Tiếp Nhận)</option>
+                        </select>
+                      </div>
                     </div>
+                  </div>
 
-                    <div className="mb-3">
-                      <label className="form-label fw-bold small text-dark">Trạng thái phê duyệt</label>
-                      <select 
-                        className="form-select form-select-sm" 
-                        value={appStatus}
-                        onChange={(e) => setAppStatus(e.target.value)}
-                      >
-                        <option value="submitted">Đã tiếp nhận (Mới nộp)</option>
-                        <option value="reviewing">Đang thẩm định kiểm duyệt</option>
-                        <option value="approved">Đã phê duyệt (Đủ điều kiện)</option>
-                        <option value="rejected">Bị từ chối (Yêu cầu bổ sung)</option>
-                      </select>
-                    </div>
+                  {/* Multi-Stage Action Buttons Panel */}
+                  <div className="mb-3">
+                    <h6 className="fw-bold text-dark fs-7 mb-2">⚡ Hành Động Xử Lý Hồ Sơ Nhanh:</h6>
 
-                    <div className="mb-3">
-                      <label className="form-label fw-bold small text-dark">Ghi chú phản hồi khách hàng</label>
+                    {!isStageAllowed(session?.role, selectedApp.stage) ? (
+                      <div className="alert alert-warning py-2 px-3 small border-warning mb-3">
+                        🔒 <strong>Giới hạn phân quyền:</strong> Tài khoản của bạn thuộc <strong>{roleInfo.title}</strong> (chỉ xử lý Giai đoạn {roleInfo.stage}). Hồ sơ này đang ở <strong>Giai đoạn {selectedApp.stage || 1}</strong> nên bạn không thể thực hiện thao tác.
+                      </div>
+                    ) : (
+                      <div className="d-flex flex-column gap-2 mb-3">
+                        {/* QUYỀN TỔ TIẾP NHẬN (GĐ 1) HOẶC ADMIN */}
+                        {(session?.role === 'admin' || session?.role === 'officer_intake') && (selectedApp.stage === 1 || !selectedApp.stage) && (
+                          <>
+                            <button 
+                              type="button" 
+                              className="btn btn-emerald btn-sm rounded-pill fw-bold text-start p-2 shadow-sm"
+                              style={{ backgroundColor: '#059669', color: '#fff' }}
+                              onClick={() => handleExecuteAction('bypass_intake', '⚡ Hồ sơ đạt chuẩn, Bypass Tổ Tiếp Nhận và chuyển thẳng lên Tổ Kiểm Soát.')}
+                            >
+                              ⚡ Bypass Tổ Tiếp Nhận ➔ Đẩy lên Tổ Kiểm Soát
+                            </button>
+
+                            <button 
+                              type="button" 
+                              className="btn btn-danger btn-sm rounded-pill fw-bold text-start p-2 shadow-sm"
+                              onClick={() => handleExecuteAction('reject_wrong_k', '❌ Từ chối do chọn sai nhóm đối tượng K. Yêu cầu nộp lại từ đầu.')}
+                            >
+                              ❌ Từ chối do chọn sai nhóm K (Bắt nộp lại từ đầu)
+                            </button>
+                          </>
+                        )}
+
+                        {/* QUYỀN TỔ KIỂM SOÁT (GĐ 2) HOẶC ADMIN */}
+                        {(session?.role === 'admin' || session?.role === 'officer_control') && selectedApp.stage === 2 && (
+                          <button 
+                            type="button" 
+                            className="btn btn-primary btn-sm rounded-pill fw-bold text-start p-2 shadow-sm"
+                            onClick={() => handleExecuteAction('approve_digital', '✅ Duyệt bản số. Người dân có 3-5 ngày để nộp bản gốc.')}
+                          >
+                            🔵 Duyệt bản số ➔ Chờ nộp bản gốc (Hạn 3-5 ngày)
+                          </button>
+                        )}
+
+                        {/* QUYỀN TIẾP NHẬN BẢN GỐC (GĐ 3) HOẶC ADMIN */}
+                        {(session?.role === 'admin' || session?.role === 'officer_hardcopy') && selectedApp.stage === 3 && (
+                          <button 
+                            type="button" 
+                            className="btn btn-dark btn-sm rounded-pill fw-bold text-start p-2 shadow-sm"
+                            onClick={() => handleExecuteAction('archive', '🟢 Hồ sơ đã đối chứng bản gốc và đưa vào Lưu Trữ.')}
+                          >
+                            🟢 Hoàn thành đối soát ➔ Chuyển vào Lưu Trữ
+                          </button>
+                        )}
+
+                        {/* YÊU CẦU BỔ SUNG (Bản mềm/bản cứng tùy giai đoạn) */}
+                        {selectedApp.stage < 4 && (
+                          <button 
+                            type="button" 
+                            className="btn btn-warning btn-sm rounded-pill fw-bold text-start p-2 shadow-sm text-dark"
+                            onClick={() => handleExecuteAction('return_to_citizen', '🟠 Yêu cầu người dân cập nhật và bổ sung tài liệu.')}
+                          >
+                            🟠 Trả hồ sơ về cho người dân (Yêu cầu bổ sung)
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                    <div className="mb-2">
+                      <label className="form-label fw-bold fs-8 text-dark mb-1">Ghi chú chi tiết gửi người dân:</label>
                       <textarea 
                         className="form-control form-control-sm" 
-                        rows="3"
-                        placeholder="VD: Hồ sơ bản mềm hợp lệ. Mời khách hàng mang bản chính đến văn phòng..."
+                        rows="2"
+                        placeholder="Nhập ghi chú phản hồi lý do bổ sung / chọn sai K..."
                         value={appNotes}
                         onChange={(e) => setAppNotes(e.target.value)}
-                      ></textarea>
+                      />
                     </div>
-
-                    <button type="submit" className="btn btn-emerald w-100 rounded-pill py-2 fw-bold shadow-sm" style={{ backgroundColor: '#059669', borderColor: '#059669' }}>
-                      💾 Lưu kết quả thẩm định
-                    </button>
-                  </form>
-
-                </div>
-              )}
+                  </div>
+                )}
 
             </div>
           )}
@@ -762,27 +1028,73 @@ export default function AdminClient({ session, initialApplications, initialUnits
 
           {/* TAB 4: SYSTEM SETTINGS */}
           {activeTab === 'settings' && (
-            <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 10px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0', maxWidth: '600px' }}>
-              <h5 style={{ fontWeight: '800', color: '#0f172a', marginBottom: '16px' }}>⚙️ Cài Đặt Hạn Chót Nộp Hồ Sơ Đợt 1</h5>
+            <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 10px rgba(0,0,0,0.04)', border: '1px solid #e2e8f0', maxWidth: '680px' }}>
+              <h5 style={{ fontWeight: '800', color: '#0f172a', marginBottom: '16px' }}>⚙️ Cài Đặt Hệ Thống &amp; Khung Giờ Hoạt Động (Handico CT3-CT4)</h5>
 
               {settingsMessage && (
                 <div className="alert alert-success py-2 small mb-3">{settingsMessage}</div>
               )}
 
               <form onSubmit={handleUpdateSettings}>
+                <div className="p-3 mb-3 bg-light rounded-3 border">
+                  <h6 className="fw-bold text-dark fs-7 mb-2">🕒 Khung Giờ Mở Cổng Hệ Thống (Mở 08:00 ➔ 17:30):</h6>
+                  <div className="row g-2 mb-2">
+                    <div className="col-6">
+                      <label className="form-label fw-bold fs-8 text-secondary">Giờ mở cổng:</label>
+                      <input type="time" className="form-control form-control-sm" defaultValue="08:00" />
+                    </div>
+                    <div className="col-6">
+                      <label className="form-label fw-bold fs-8 text-secondary">Giờ đóng cổng:</label>
+                      <input type="time" className="form-control form-control-sm" defaultValue="17:30" />
+                    </div>
+                  </div>
+                  <div className="form-check">
+                    <input type="checkbox" className="form-check-input" id="enableHoursCheck" defaultChecked />
+                    <label className="form-check-label fs-8 text-dark" htmlFor="enableHoursCheck">
+                      Khóa nút nộp/sửa hồ sơ tự động khi ngoài khung giờ 08:00 - 17:30.
+                    </label>
+                  </div>
+                </div>
+
+                <div className="p-3 mb-3 bg-light rounded-3 border">
+                  <h6 className="fw-bold text-dark fs-7 mb-2">⏱️ Cấu Hình Thời Gian Thụ Lý Hồ Sơ (SLA):</h6>
+                  <div className="row g-2">
+                    <div className="col-6 col-md-3">
+                      <label className="form-label fw-bold fs-8 text-secondary">Tổng SLA:</label>
+                      <input type="number" className="form-control form-control-sm" defaultValue={30} />
+                      <div className="fs-8 text-muted">30 Ngày</div>
+                    </div>
+                    <div className="col-6 col-md-3">
+                      <label className="form-label fw-bold fs-8 text-secondary">Tổ Tiếp nhận:</label>
+                      <input type="number" className="form-control form-control-sm" defaultValue={5} />
+                      <div className="fs-8 text-muted">5 Ngày</div>
+                    </div>
+                    <div className="col-6 col-md-3">
+                      <label className="form-label fw-bold fs-8 text-secondary">Tổ Kiểm soát:</label>
+                      <input type="number" className="form-control form-control-sm" defaultValue={10} />
+                      <div className="fs-8 text-muted">10 Ngày</div>
+                    </div>
+                    <div className="col-6 col-md-3">
+                      <label className="form-label fw-bold fs-8 text-secondary">Nộp bản gốc:</label>
+                      <input type="number" className="form-control form-control-sm" defaultValue={5} />
+                      <div className="fs-8 text-muted">3-5 Ngày</div>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="mb-3">
-                  <label className="form-label fw-bold small text-dark">Hạn chót đếm ngược (ISO Date Format)</label>
+                  <label className="form-label fw-bold small text-dark">Hạn chót nộp hồ sơ Đợt 1 (ISO Date Format)</label>
                   <input 
                     type="text" 
                     className="form-control"
                     value={deadlineVal}
                     onChange={(e) => setDeadlineVal(e.target.value)}
                   />
-                  <div className="form-text small text-muted">VD: 2026-08-21T17:00:00.000Z</div>
+                  <div className="form-text small text-muted">VD: 2026-08-30T17:00:00.000Z</div>
                 </div>
 
-                <button type="submit" className="btn btn-emerald rounded-pill px-4 py-2 fw-bold">
-                  💾 Lưu cài đặt thời gian
+                <button type="submit" className="btn btn-emerald rounded-pill px-4 py-2 fw-bold shadow-sm" style={{ backgroundColor: '#059669', borderColor: '#059669' }}>
+                  💾 Lưu cài đặt hệ thống &amp; SLA
                 </button>
               </form>
             </div>

@@ -7,10 +7,6 @@ export default function BackToTop() {
   const [visible, setVisible] = useState(false);
   const pathname = usePathname();
 
-  if (pathname?.startsWith('/admin')) {
-    return null;
-  }
-
   useEffect(() => {
     const handleScroll = () => {
       if (window.scrollY > 300) {
@@ -23,6 +19,10 @@ export default function BackToTop() {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  if (pathname?.startsWith('/admin')) {
+    return null;
+  }
 
   const scrollToTop = () => {
     window.scrollTo({

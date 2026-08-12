@@ -72,9 +72,9 @@ export async function POST(request) {
 // Cập nhật trạng thái bán căn hộ trực tiếp của Admin
 export async function PUT(request) {
   try {
-    const session = await getSession();
-    if (!session || session.role !== 'admin') {
-      return NextResponse.json({ success: false, message: 'Quyền truy cập bị từ chối.' }, { status: 403 });
+    const canManageUnits = session && (session.role === 'admin' || session.role === 'officer_archive');
+    if (!canManageUnits) {
+      return NextResponse.json({ success: false, message: 'Chỉ Super Admin và Bộ phận lưu trữ mới có quyền quản lý bảng hàng căn hộ.' }, { status: 403 });
     }
 
     const { unitId, status } = await request.json();

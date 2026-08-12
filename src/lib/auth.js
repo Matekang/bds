@@ -8,13 +8,14 @@ export async function setSession(user) {
     userId: user.id,
     role: user.role,
     fullName: user.fullName,
-    phoneNumber: user.phoneNumber
+    phoneNumber: user.phoneNumber,
+    email: user.email || ''
   };
   const token = Buffer.from(JSON.stringify(sessionData)).toString('base64');
   cookieStore.set('session_token', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    secure: false,
+    sameSite: 'lax',
     maxAge: 60 * 60 * 24 * 7, // 7 days
     path: '/'
   });
@@ -36,7 +37,10 @@ export async function getSession() {
     const user = db.users.find(u => u.id === session.userId);
     if (!user) return null;
 
-    return session;
+    return {
+      ...session,
+      email: user.email || session.email || ''
+    };
   } catch (error) {
     return null;
   }

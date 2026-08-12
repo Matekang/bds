@@ -88,6 +88,7 @@ export default function Navbar({ session }) {
               <div className="mega-panel">
                 <Link className="mega-link" href="/DieuKienMua">Tôi có đủ điều kiện mua không?</Link>
                 <Link className="mega-link" href="/cungbanmuanha">Hướng dẫn cùng bạn mua nhà</Link>
+                <Link className="mega-link" href="/QuyCheBocTham">Quy chế bốc thăm NOXH</Link>
               </div>
             </div>
             
@@ -117,8 +118,8 @@ export default function Navbar({ session }) {
                 </button>
                 <ul className="dropdown-menu dropdown-menu-end mt-2 shadow border-0" style={{ borderRadius: '12px' }}>
                   <li>
-                    <Link className="dropdown-item py-2 px-3 fw-semibold text-emerald" href={session.role === 'admin' ? '/admin' : '/portal'}>
-                      {session.role === 'admin' ? '⚙️ Trang Admin' : '👤 Portal Cá Nhân'}
+                    <Link className="dropdown-item py-2 px-3 fw-semibold text-emerald" href={(session.role === 'admin' || session.role?.startsWith('officer_')) ? '/admin' : '/portal'}>
+                      {(session.role === 'admin' || session.role?.startsWith('officer_')) ? '⚙️ Trang Cán Bộ' : '👤 Portal Cá Nhân'}
                     </Link>
                   </li>
                   <li><hr className="dropdown-divider" /></li>
@@ -191,6 +192,7 @@ export default function Navbar({ session }) {
             <div className="collapse" id="mnav3">
               <Link className="mnav-link" href="/DieuKienMua">Tôi có đủ điều kiện mua không?</Link>
               <Link className="mnav-link" href="/cungbanmuanha">Hướng dẫn cùng bạn mua nhà</Link>
+              <Link className="mnav-link" href="/QuyCheBocTham">Quy chế bốc thăm NOXH</Link>
             </div>
           </div>
           <div className="mnav-group">
@@ -207,7 +209,7 @@ export default function Navbar({ session }) {
           <div className="mnav-actions">
             {session ? (
               <>
-                <Link className="btn btn-emerald rounded-pill w-100 text-center" href={session.role === 'admin' ? '/admin' : '/portal'}>
+                <Link className="btn btn-emerald rounded-pill w-100 text-center" href={(session.role === 'admin' || session.role?.startsWith('officer_')) ? '/admin' : '/portal'}>
                   👤 {session.fullName}
                 </Link>
                 <button type="button" className="btn btn-light rounded-pill w-100" onClick={handleLogout}>Đăng xuất</button>

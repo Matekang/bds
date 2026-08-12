@@ -34,6 +34,67 @@ html, body {
 body { font-family: "Outfit", "Segoe UI", system-ui, -apple-system, sans-serif; color: var(--ink); background: #fff; }
 a { text-decoration: none; }
 
+/* ---------- Mobile First Ergonomics & Bottom Navigation Bar ---------- */
+@media (max-width: 768px) {
+  body {
+    padding-bottom: 72px !important;
+  }
+  .mobile-touch-target {
+    min-height: 48px;
+    font-size: 0.95rem !important;
+  }
+  .mobile-horizontal-stepper {
+    display: flex;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 6px;
+  }
+  .mobile-horizontal-stepper::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.mobile-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: #ffffff;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  z-index: 1050;
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.08);
+}
+
+.mobile-bottom-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-decoration: none;
+  background: transparent;
+  border: none;
+  padding: 6px 0;
+  flex: 1;
+}
+
+.mobile-bottom-nav-item.active {
+  color: #0b6640;
+}
+
+.mobile-bottom-nav-icon {
+  font-size: 1.2rem;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
 /* ---------- Buttons ---------- */
 .btn-emerald { background: var(--brand-3); border-color: var(--brand-3); color: #fff; }
 .btn-emerald:hover { background: var(--brand); border-color: var(--brand); color: #fff; }
