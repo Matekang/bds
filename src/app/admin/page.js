@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth';
-import { getDb } from '@/lib/db';
 import AdminClient from './AdminClient';
 
 export const metadata = {
@@ -16,14 +15,12 @@ export default async function AdminPage() {
     redirect('/?auth=login');
   }
 
-  const db = getDb();
-
   return (
     <AdminClient 
       session={session} 
-      initialApplications={db.applications || []} 
-      initialUnits={db.units || []} 
-      initialDeadline={db.settings?.countdownDeadline || '2026-08-20T17:00:00.000Z'} 
+      initialApplications={[]} 
+      initialUnits={[]} 
+      initialDeadline={'2026-08-30T17:00:00.000Z'} 
     />
   );
 }

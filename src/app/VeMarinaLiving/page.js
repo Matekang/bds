@@ -77,10 +77,10 @@ export default function VeMarinaLivingPage() {
             Nộp hồ sơ trực tuyến ngay hôm nay để nhận thông báo xét duyệt điều kiện đợt 1 và đặt chỗ căn hộ đẹp nhất tại dự án Marina Living Hạ Long.
           </p>
           <div className="d-flex justify-content-center gap-3 flex-wrap">
-            <Link href="/DieuKienMua" className="btn btn-gold rounded-pill px-4 py-2 text-decoration-none">
+            <Link href="/DieuKienMua" className="btn btn-gold rounded-2 px-4 py-2 text-decoration-none">
               Trắc nghiệm Điều Kiện Mua ➜
             </Link>
-            <Link href="/#matbang" className="btn btn-outline-light rounded-pill px-4 py-2 text-decoration-none">
+            <Link href="/#matbang" className="btn btn-outline-light rounded-2 px-4 py-2 text-decoration-none">
               Xem Bảng Hàng Căn Hộ
             </Link>
           </div>

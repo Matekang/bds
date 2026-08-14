@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { renderAsync } from 'docx-preview';
 
 export default function QuyCheBocThamPage() {
-  const [activeTab, setActiveTab] = useState('phase1'); // 'phase1' | 'phase2' | 'simulator'
+  const [activeTab, setActiveTab] = useState('phase1'); // 'phase1' | 'phase2' | 'eligibility'
 
   // Dynamic Calculator state for Phase 1
   const [totalUnits, setTotalUnits] = useState(300);
@@ -31,29 +32,9 @@ export default function QuyCheBocThamPage() {
 
   const completedChecklistCount = Object.values(checklist).filter(Boolean).length;
 
-  // 11 Sample Applicants for Lottery Simulation (Covering K1 to K11)
-  const sampleApplicants = [
-    { id: 'HS-2026-1001', name: 'Nguyễn Văn An', cccd: '001092001234', category: 'K1 – Người có công với cách mạng', priority: 'Ưu tiên 1', preference: '2PN' },
-    { id: 'HS-2026-1002', name: 'Trần Thị Bình', cccd: '035185002345', category: 'K2 – Hộ nghèo, cận nghèo nông thôn', priority: 'Thông thường', preference: '2PN' },
-    { id: 'HS-2026-1003', name: 'Lê Hoàng Cường', cccd: '014090003456', category: 'K3 – Hộ nông thôn bị ảnh hưởng thiên tai', priority: 'Thông thường', preference: '2PN' },
-    { id: 'HS-2026-1004', name: 'Phạm Minh Đức', cccd: '022088004567', category: 'K4 – Hộ nghèo, cận nghèo đô thị', priority: 'Ưu tiên 2', preference: '2PN' },
-    { id: 'HS-2026-1005', name: 'Hoàng Thị Em', cccd: '030193005678', category: 'K5 – Người thu nhập thấp đô thị', priority: 'Thông thường', preference: '2PN' },
-    { id: 'HS-2026-1006', name: 'Đỗ Quảng Giang', cccd: '038084006789', category: 'K6 – Công nhân KCN', priority: 'Thông thường', preference: '2PN' },
-    { id: 'HS-2026-1007', name: 'Vũ Thị Hoa', cccd: '017195007890', category: 'K7 – Sĩ quan lực lượng vũ trang', priority: 'Ưu tiên 1', preference: '3PN' },
-    { id: 'HS-2026-1008', name: 'Bùi Văn Hải', cccd: '026091008901', category: 'K8 – Cán bộ, công chức, viên chức', priority: 'Ưu tiên 2', preference: '3PN' },
-    { id: 'HS-2026-1009', name: 'Đặng Kim Khanh', cccd: '001196009012', category: 'K9 – Đã trả lại nhà ở công vụ', priority: 'Thông thường', preference: '3PN' },
-    { id: 'HS-2026-1010', name: 'Ngô Quốc Lập', cccd: '031087010123', category: 'K10 – Thu hồi đất, giải tỏa nhà', priority: 'Ưu tiên 1', preference: '3PN' },
-    { id: 'HS-2026-1011', name: 'Trịnh Hoài Nam', cccd: '031099011234', category: 'K11 – Học sinh, sinh viên', priority: 'Thông thường', preference: '2PN' },
-  ];
-
-  // Single & Batch Lottery Draw Simulator State
-  const [simGroup, setSimGroup] = useState('2PN'); // '2PN' | '3PN'
-  const [simNv, setSimNv] = useState('NV1');
-  const [simResult, setSimResult] = useState(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-
-  const [batchResults, setBatchResults] = useState(null);
-  const [isBatchDrawing, setIsBatchDrawing] = useState(false);
+  // Registration status for current citizen
+  const [isJoined, setIsJoined] = useState(false);
+  const [userOwnApp, setUserOwnApp] = useState(null);
 
   // Logged-in user session & Popup Notification state
   const [currentUser, setCurrentUser] = useState(null);
@@ -63,166 +44,148 @@ export default function QuyCheBocThamPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
 
-  React.useEffect(() => {
+  // Docx Viewer Modal State
+  const [docxModal, setDocxModal] = useState(null); // { title: string, url: string }
+  const [isDocLoading, setIsDocLoading] = useState(false);
+  const docxContainerRef = useRef(null);
+
+  useEffect(() => {
+    if (docxModal && docxContainerRef.current) {
+      setIsDocLoading(true);
+      docxContainerRef.current.innerHTML = '';
+      fetch(docxModal.url)
+        .then(res => {
+          if (!res.ok) throw new Error('Không thể tải file docx');
+          return res.blob();
+        })
+        .then(blob => {
+          renderAsync(blob, docxContainerRef.current, null, {
+            inWrapper: true,
+            ignoreWidth: false,
+            ignoreHeight: false,
+            ignoreFonts: false,
+            breakPages: true,
+            ignoreLastRenderedPageBreak: true,
+            trimXmlDeclaration: true,
+          })
+            .then(() => setIsDocLoading(false))
+            .catch(() => setIsDocLoading(false));
+        })
+        .catch(() => setIsDocLoading(false));
+    }
+  }, [docxModal]);
+
+  useEffect(() => {
     fetch('/api/auth/me')
       .then(res => res.json())
       .then(data => {
         if (data.session) {
           setCurrentUser(data.session);
+          // Check if citizen joined
+          const val = localStorage.getItem('lottery_joined_' + (data.session.phoneNumber || data.session.email || 'guest'));
+          setIsJoined(val === 'true');
+          
+          // Fetch own application to check eligibility
+          fetch('/api/applications')
+            .then(r => r.json())
+            .then(d => {
+              if (d.success && d.applications && d.applications.length > 0) {
+                setUserOwnApp(d.applications[0]);
+              }
+            })
+            .catch(() => {});
         }
       })
       .catch(() => {});
 
-    fetch('/api/applications')
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.applications) {
-          const approved = data.applications.filter(a => a.status === 'approved' || a.status === 'luu_tru' || a.stage === 4);
-          setDbApprovedApps(approved);
-        }
-      })
-      .catch(() => {});
+    const loadApprovedData = () => {
+      fetch('/api/applications/public-approved')
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.applications) {
+            setDbApprovedApps(data.applications);
+          } else {
+            fetch('/api/applications')
+              .then(res => res.json())
+              .then(d2 => {
+                if (d2.success && d2.applications) {
+                  const approved = d2.applications.filter(a => a.status === 'approved' || a.status === 'luu_tru' || a.stage === 4);
+                  setDbApprovedApps(approved);
+                }
+              })
+              .catch(() => {});
+          }
+        })
+        .catch(() => {});
+    };
+
+    loadApprovedData();
+    const pollInterval = setInterval(loadApprovedData, 5000);
+    return () => clearInterval(pollInterval);
   }, []);
 
-  const displayApplicants = dbApprovedApps.length > 0
-    ? dbApprovedApps.map(a => ({
-        id: a.id,
-        name: a.fullName,
-        cccd: a.cccdNumber || a.phoneNumber || 'Đã xác thực',
-        phoneNumber: a.phoneNumber,
-        email: a.email,
-        category: `${a.targetObject || 'K1'} – Đối tượng NOXH`,
-        priority: (a.targetObject === 'K1' || a.targetObject === 'K7' || a.targetObject === 'K10') ? 'Ưu tiên 1' : 'Thông thường',
-        preference: a.unitType || '2PN'
-      }))
-    : sampleApplicants;
+  const handleJoinLottery = () => {
+    if (currentUser) {
+      localStorage.setItem('lottery_joined_' + (currentUser.phoneNumber || currentUser.email || 'guest'), 'true');
+      setIsJoined(true);
+    }
+  };
 
-  const filteredDisplayApplicants = displayApplicants.filter(app => {
+  const handleCancelJoin = () => {
+    if (currentUser) {
+      localStorage.setItem('lottery_joined_' + (currentUser.phoneNumber || currentUser.email || 'guest'), 'false');
+      setIsJoined(false);
+    }
+  };
+
+  const displayApplicants = dbApprovedApps.map(a => ({
+    id: a.id,
+    name: a.fullName,
+    cccd: a.cccdNumber || a.phoneNumber || 'Đã xác thực',
+    phoneNumber: a.phoneNumber,
+    email: a.email,
+    category: `${a.targetObject || 'K1'} – Đối tượng NOXH`,
+    priority: (a.targetObject === 'K1' || a.targetObject === 'K7' || a.targetObject === 'K10') ? 'Ưu tiên 1' : 'Thông thường',
+    preference: a.unitType || '2PN'
+  }));
+
+  // Define citizen application mapping to check eligibility
+  const userApp = currentUser ? displayApplicants.find(app => 
+    (app.phoneNumber && app.phoneNumber === currentUser.phoneNumber) ||
+    (app.email && currentUser.email && app.email.toLowerCase() === currentUser.email.toLowerCase()) ||
+    (app.name && currentUser.fullName && app.name.toLowerCase().trim() === currentUser.fullName.toLowerCase().trim()) ||
+    (app.cccd && currentUser.cccd && app.cccd === currentUser.cccd)
+  ) : null;
+
+  // Extend display list with currentUser if they joined and are not already in the seeded database approved list
+  const displayApplicantsExtended = [...displayApplicants];
+  if (currentUser && isJoined) {
+    const userAlreadyInList = displayApplicants.some(app => 
+      (app.phoneNumber && app.phoneNumber === currentUser.phoneNumber) ||
+      (app.email && currentUser.email && app.email.toLowerCase() === currentUser.email.toLowerCase()) ||
+      (app.cccd && currentUser.cccd && app.cccd === currentUser.cccd)
+    );
+    if (!userAlreadyInList) {
+      displayApplicantsExtended.unshift({
+        id: userOwnApp ? userOwnApp.id : `HS-${currentUser.phoneNumber ? currentUser.phoneNumber.slice(-4) : 'USER'}`,
+        name: currentUser.fullName || 'Người Dùng Hiện Tại',
+        cccd: currentUser.cccd || 'Đã xác thực',
+        phoneNumber: currentUser.phoneNumber,
+        email: currentUser.email,
+        category: userOwnApp ? `${userOwnApp.targetObject || 'K1'} – Đối tượng NOXH` : 'K1 – Đối tượng NOXH',
+        priority: userOwnApp && (userOwnApp.targetObject === 'K1' || userOwnApp.targetObject === 'K7' || userOwnApp.targetObject === 'K10') ? 'Ưu tiên 1' : 'Thông thường',
+        preference: userOwnApp ? userOwnApp.unitType : '2PN'
+      });
+    }
+  }
+
+  const filteredDisplayApplicants = displayApplicantsExtended.filter(app => {
     if (kFilter === 'all') return true;
     return app.category.startsWith(kFilter);
   });
 
   const totalPages = Math.ceil(filteredDisplayApplicants.length / pageSize) || 1;
-  const paginatedDisplayApplicants = (batchResults || filteredDisplayApplicants).slice((currentPage - 1) * pageSize, currentPage * pageSize);
-
-  const handleSimulateDraw = () => {
-    setIsDrawing(true);
-    setSimResult(null);
-
-    setTimeout(() => {
-      setIsDrawing(false);
-      const rand = Math.random();
-      if (rand > 0.3) {
-        // Trúng căn
-        const tower = Math.random() > 0.5 ? 'Tòa A' : 'Tòa B';
-        const floor = Math.floor(Math.random() * 15) + 2;
-        const unitNum = Math.floor(Math.random() * 12) + 1;
-        const area = simGroup === '2PN' ? (54.5 + Math.random() * 10).toFixed(1) : (72.0 + Math.random() * 8).toFixed(1);
-        const code = `${tower === 'Tòa A' ? 'A' : 'B'}${floor.toString().padStart(2, '0')}.${unitNum.toString().padStart(2, '0')}`;
-        
-        setSimResult({
-          type: 'SUCCESS',
-          title: 'CHÚC MỪNG! BẠN ĐÃ BỐC TRÚNG CĂN HỘ',
-          tower,
-          floor: `Tầng ${floor}`,
-          code,
-          area: `${area} m²`,
-          group: simGroup === '2PN' ? 'Nhóm 1 (2 Phòng Ngủ)' : 'Nhóm 2 (3 Phòng Ngủ)',
-          note: 'Biên bản kết quả bốc thăm sẽ được xác lập ngay tại Hội đồng bốc thăm.'
-        });
-      } else if (rand > 0.1) {
-        // Phiếu trắng -> chuyển NV
-        setSimResult({
-          type: 'WHITE_TICKET',
-          title: 'PHIẾU TRẮNG - CHUYỂN BỐC NGUYỆN VỌNG KẾ TIẾP',
-          note: 'Bạn chưa bốc trúng căn hộ ở Nguyện vọng 1. Theo Điều 9 Quy chế, bạn được quyền tiếp tục tham gia bốc thăm ở Nhóm diện tích theo Nguyện vọng kế tiếp (nếu còn quỹ căn).',
-          nextAction: 'Đến bàn bốc thăm Nhóm diện tích Nguyện vọng 2'
-        });
-      } else {
-        // Phiếu dự khuyết
-        const reserveNum = Math.floor(Math.random() * 20) + 1;
-        setSimResult({
-          type: 'RESERVE',
-          title: `PHIẾU DỰ KHUYẾT QUYỀN MUA - SỐ THỨ TỰ #${reserveNum}`,
-          note: 'Trong trường hợp có khách hàng từ bỏ quyền mua hoặc hồ sơ bị loại sau thẩm định, CĐT sẽ liên hệ với bạn theo thứ tự phiếu dự khuyết trong thời hạn 03 ngày.',
-          reserveNum
-        });
-      }
-    }, 1200);
-  };
-
-  const handleBatchDraw = () => {
-    setIsBatchDrawing(true);
-    setBatchResults(null);
-
-    setTimeout(() => {
-      setIsBatchDrawing(false);
-      let reserveCounter = 1;
-
-      const results = displayApplicants.map((app, idx) => {
-        const rand = Math.random();
-        const successThreshold = app.priority.includes('Ưu tiên') ? 0.2 : 0.35;
-        const whiteTicketThreshold = 0.12;
-
-        if (rand > successThreshold) {
-          const tower = (idx % 2 === 0) ? 'Tòa A' : 'Tòa B';
-          const floor = Math.floor(Math.random() * 18) + 2;
-          const unitNum = Math.floor(Math.random() * 10) + 1;
-          const area = app.preference === '2PN' ? (54.5 + (idx % 4) * 2.5).toFixed(1) : (71.5 + (idx % 3) * 2.8).toFixed(1);
-          const code = `${tower === 'Tòa A' ? 'A' : 'B'}${floor.toString().padStart(2, '0')}.${unitNum.toString().padStart(2, '0')}`;
-
-          return {
-            ...app,
-            type: 'SUCCESS',
-            statusLabel: '🎯 Trúng căn hộ',
-            badgeClass: 'bg-success text-white',
-            tower,
-            floor: `Tầng ${floor}`,
-            code,
-            area: `${area} m²`,
-            details: `${tower} - Tầng ${floor} - Mã ${code} (${area} m²)`
-          };
-        } else if (rand > whiteTicketThreshold) {
-          return {
-            ...app,
-            type: 'WHITE_TICKET',
-            statusLabel: '⚪ Phiếu trắng',
-            badgeClass: 'bg-warning text-dark',
-            details: 'Phiếu trắng NV1 (Được chuyển bốc NV2)'
-          };
-        } else {
-          const reserveNum = reserveCounter++;
-          return {
-            ...app,
-            type: 'RESERVE',
-            statusLabel: `📋 Dự khuyết #${reserveNum}`,
-            badgeClass: 'bg-secondary text-white',
-            reserveNum,
-            details: `Phiếu dự khuyết thứ tự #${reserveNum}`
-          };
-        }
-      });
-
-      setBatchResults(results);
-
-      // Auto trigger popup notification for logged-in user or first applicant
-      if (currentUser) {
-        const myResult = results.find(r => 
-          (r.phoneNumber && r.phoneNumber === currentUser.phoneNumber) ||
-          (r.email && currentUser.email && r.email.toLowerCase() === currentUser.email.toLowerCase()) ||
-          (r.name && currentUser.fullName && r.name.toLowerCase().trim() === currentUser.fullName.toLowerCase().trim()) ||
-          (r.cccd && currentUser.cccd && r.cccd === currentUser.cccd)
-        );
-        if (myResult) {
-          setUserResultModal(myResult);
-        } else {
-          setUserResultModal(results[0]);
-        }
-      } else {
-        setUserResultModal(results[0]);
-      }
-    }, 1500);
-  };
+  const paginatedDisplayApplicants = filteredDisplayApplicants.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <div className="bg-soft py-5">
@@ -230,7 +193,7 @@ export default function QuyCheBocThamPage() {
         
         {/* Header Hero Section */}
         <div className="text-center mb-5">
-          <div className="d-inline-flex align-items-center gap-2 px-3 py-1 bg-warning bg-opacity-10 text-dark rounded-pill fw-semibold small mb-3 border border-warning border-opacity-25">
+          <div className="d-inline-flex align-items-center gap-2 px-3 py-1 bg-warning bg-opacity-10 text-dark rounded-2 fw-semibold small mb-3 border border-warning border-opacity-25">
             <span className="badge bg-gold text-dark rounded-circle p-1">📜</span>
             Văn bản chính thức | Dự án NOXH Marina Living Hạ Long
           </div>
@@ -241,59 +204,66 @@ export default function QuyCheBocThamPage() {
             Hướng dẫn tra cứu toàn bộ quy định về <strong>Bốc thăm Quyền mua (Giai đoạn 1)</strong> và <strong>Bốc thăm Vị trí, Diện tích Căn hộ (Giai đoạn 2)</strong> theo đúng Nghị định và Luật Nhà ở.
           </p>
           <div className="d-flex justify-content-center gap-2 flex-wrap mt-3">
-            <a 
-              href="/files/1_boc_tham_quyen_uu_tien_quyen_mua_can_ho.docx" 
-              download
-              className="btn btn-sm rounded-pill px-3 py-1.5 border shadow-sm cursor-pointer d-inline-flex align-items-center gap-1.5 text-decoration-none"
+            <button 
+              type="button"
+              onClick={() => setDocxModal({
+                title: 'Sổ tay Quy chế 1: Quyền ưu tiên & Quyền mua (.docx)',
+                url: '/files/1_boc_tham_quyen_uu_tien_quyen_mua_can_ho.docx'
+              })}
+              className="btn btn-sm rounded-2 px-3 py-1.5 border shadow-sm cursor-pointer d-inline-flex align-items-center gap-1.5 text-decoration-none"
               style={{ backgroundColor: '#e0f7ff', color: '#0284c7', borderColor: '#b3f0ff', fontSize: '0.83rem', fontWeight: '500' }}
             >
               📖 Sổ tay Quy chế 1: Quyền ưu tiên &amp; Quyền mua (.docx)
-            </a>
-            <a 
-              href="/files/2_boc_tham_vi_tri.docx" 
-              download
-              className="btn btn-sm rounded-pill px-3 py-1.5 border shadow-sm cursor-pointer d-inline-flex align-items-center gap-1.5 text-decoration-none"
+            </button>
+            <button 
+              type="button"
+              onClick={() => setDocxModal({
+                title: 'Sổ tay Quy chế 2: Bốc thăm Vị trí căn hộ (.docx)',
+                url: '/files/2_boc_tham_vi_tri.docx'
+              })}
+              className="btn btn-sm rounded-2 px-3 py-1.5 border shadow-sm cursor-pointer d-inline-flex align-items-center gap-1.5 text-decoration-none"
               style={{ backgroundColor: '#f0fdf4', color: '#15803d', borderColor: '#bbf7d0', fontSize: '0.83rem', fontWeight: '500' }}
             >
               📖 Sổ tay Quy chế 2: Bốc thăm Vị trí căn hộ (.docx)
-            </a>
+            </button>
           </div>
         </div>
 
         {/* Navigation Tabs Header */}
-        <div className="d-flex justify-content-center mb-4">
-          <div className="bg-white p-1.5 rounded-pill shadow-sm border d-inline-flex gap-1">
-            <button
-              onClick={() => setActiveTab('phase1')}
-              className={`btn rounded-pill px-4 py-2.5 fw-bold transition-all ${
-                activeTab === 'phase1' 
-                  ? 'btn-emerald shadow-sm' 
-                  : 'btn-light text-muted border-0'
-              }`}
-            >
-               Giai Đoạn 1: Quyền Ưu Tiên & Quyền Mua
-            </button>
-            <button
-              onClick={() => setActiveTab('phase2')}
-              className={`btn rounded-pill px-4 py-2.5 fw-bold transition-all ${
-                activeTab === 'phase2' 
-                  ? 'btn-emerald shadow-sm' 
-                  : 'btn-light text-muted border-0'
-              }`}
-            >
-               Giai Đoạn 2: Vị Trí & Diện Tích Căn Hộ
-            </button>
-            <button
-              onClick={() => setActiveTab('simulator')}
-              className={`btn rounded-pill px-4 py-2.5 fw-bold transition-all ${
-                activeTab === 'simulator' 
-                  ? 'btn-gold shadow-sm text-dark' 
-                  : 'btn-light text-muted border-0'
-              }`}
-            >
-              🎲 Giả Lập Bốc Thăm Thử
-            </button>
-          </div>
+        <div className="d-flex justify-content-center gap-3 flex-wrap mb-5">
+          <button
+            onClick={() => setActiveTab('phase1')}
+            className={`btn rounded-3 px-4 py-2.5 fw-bold transition-all shadow-sm ${
+              activeTab === 'phase1' 
+                ? 'btn-emerald border-0' 
+                : 'btn-light bg-white border text-secondary'
+            }`}
+            style={{ minWidth: '240px' }}
+          >
+             Giai Đoạn 1: Quyền Ưu Tiên & Quyền Mua
+          </button>
+          <button
+            onClick={() => setActiveTab('phase2')}
+            className={`btn rounded-3 px-4 py-2.5 fw-bold transition-all shadow-sm ${
+              activeTab === 'phase2' 
+                ? 'btn-emerald border-0' 
+                : 'btn-light bg-white border text-secondary'
+            }`}
+            style={{ minWidth: '240px' }}
+          >
+             Giai Đoạn 2: Vị Trí & Diện Tích Căn Hộ
+          </button>
+          <button
+            onClick={() => setActiveTab('eligibility')}
+            className={`btn rounded-3 px-4 py-2.5 fw-bold transition-all shadow-sm ${
+              activeTab === 'eligibility' 
+                ? 'btn-tab-gold border-0 text-dark' 
+                : 'btn-light bg-white border text-secondary'
+            }`}
+            style={{ minWidth: '240px' }}
+          >
+             📋 Điều Kiện & Đăng Ký Tham Gia
+          </button>
         </div>
 
         {/* ========================================================================= */}
@@ -520,7 +490,7 @@ export default function QuyCheBocThamPage() {
                   {/* Ca Sáng */}
                   <div className="col-md-6">
                     <div className="p-4 bg-cream rounded-4 border border-warning border-opacity-25 h-100">
-                      <span className="badge bg-gold text-dark fw-bold px-3 py-1.5 rounded-pill mb-3">
+                      <span className="badge bg-gold text-dark fw-bold px-3 py-1.5 rounded-2 mb-3">
                         ☀️ BUỔI SÁNG (07h00’ - 10h45’)
                       </span>
                       <h6 className="fw-bold text-emerald">Bốc thăm Nhóm diện tích NV1 Ca Sáng</h6>
@@ -544,7 +514,7 @@ export default function QuyCheBocThamPage() {
                   {/* Ca Chiều */}
                   <div className="col-md-6">
                     <div className="p-4 bg-light rounded-4 border h-100">
-                      <span className="badge bg-emerald text-white fw-bold px-3 py-1.5 rounded-pill mb-3">
+                      <span className="badge bg-emerald text-white fw-bold px-3 py-1.5 rounded-2 mb-3">
                         🌙 BUỔI CHIỀU (13h00’ - 17h30’)
                       </span>
                       <h6 className="fw-bold text-emerald">Bốc thăm Nhóm diện tích NV1 Ca Chiều</h6>
@@ -576,7 +546,7 @@ export default function QuyCheBocThamPage() {
             <div className="card border-0 shadow-sm rounded-4 mb-4">
               <div className="card-header bg-white py-3 px-4 border-bottom d-flex justify-content-between align-items-center">
                 <h5 className="fw-bold text-emerald mb-0">📄 2. Checklist Giấy Tờ Cần Mang Theo (Điều 7)</h5>
-                <span className="badge bg-emerald rounded-pill px-3 py-1.5 fs-7">
+                <span className="badge bg-emerald rounded-2 px-3 py-1.5 fs-7">
                   Đã chuẩn bị: {completedChecklistCount} / 4
                 </span>
               </div>
@@ -665,351 +635,197 @@ export default function QuyCheBocThamPage() {
         )}
 
         {/* ========================================================================= */}
-        {/* TAB 3: TRẢI NGHIỆM GIẢ LẬP BỐC THĂM TRỰC TUYẾN (11 HỒ SƠ K1-K11) */}
+        {/* TAB 3: ĐIỀU KIỆN VÀ ĐĂNG KÝ THAM GIA BỐC THĂM */}
         {/* ========================================================================= */}
-        {activeTab === 'simulator' && (
+        {activeTab === 'eligibility' && (
           <div className="animate-fade-in">
-            <div className="card border-0 shadow-lg rounded-4 overflow-hidden bg-white">
-              <div className="card-header bg-emerald text-white py-4 px-4 text-center">
-                <span className="badge bg-gold text-dark rounded-pill px-3 py-1 fw-bold mb-2">MÔ PHỎNG THỰC TẾ 11 NHÓM ĐỐI TƯỢNG (K1 ĐẾN K11)</span>
-                <h3 className="fw-extrabold mb-1">🎲 BỘ GIẢ LẬP BỐC THĂM 11 HỒ SƠ (ĐỦ K1 ĐẾN K11)</h3>
-                <p className="text-light opacity-75 small mb-0">
-                  Thử nghiệm quy trình bốc thăm ngẫu nhiên cho 11 khách hàng đại diện đầy đủ 11 nhóm đối tượng K1 – K11 theo Luật Nhà ở.
-                </p>
-              </div>
-
-              <div className="card-body p-4 p-md-5">
-                {/* Control Panel */}
-                <div className="d-flex justify-content-center align-items-center gap-3 flex-wrap mb-4">
-                  <button 
-                    onClick={handleBatchDraw}
-                    disabled={isBatchDrawing || isDrawing}
-                    className="btn btn-gold btn-lg px-4 py-3 rounded-pill fw-extrabold shadow hover-scale d-inline-flex align-items-center gap-2"
-                  >
-                    {isBatchDrawing ? (
-                      <>
-                        <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-                        Đang quay số bốc thăm cho 11 hồ sơ (K1-K11)...
-                      </>
-                    ) : (
-                      <>🔥 BỐC THĂM HÀNG LOẠT CHO 11 HỒ SƠ (K1-K11)</>
-                    )}
-                  </button>
-
-                  <button 
-                    onClick={handleSimulateDraw}
-                    disabled={isDrawing || isBatchDrawing}
-                    className="btn btn-outline-success btn-lg px-4 py-3 rounded-pill fw-bold d-inline-flex align-items-center gap-2"
-                  >
-                    {isDrawing ? (
-                      <>
-                        <span className="spinner-border spinner-border-sm me-1"></span>
-                        Đang bốc 1 phiếu...
-                      </>
-                    ) : (
-                      <>🎯 Bốc Thử 1 Cá Nhân</>
-                    )}
-                  </button>
+            {/* Top Alert / Banner */}
+            <div className="alert alert-warning border-0 shadow-sm rounded-4 p-4 mb-4 bg-white border-start border-4 border-warning">
+              <div className="d-flex align-items-start gap-3">
+                <div className="bg-warning text-dark rounded-circle p-3 d-flex align-items-center justify-content-center" style={{ width: '48px', height: '48px', flexShrink: 0 }}>
+                  📋
                 </div>
-
-                {/* Single Simulator Output if triggered */}
-                {simResult && (
-                  <div className="mb-4 p-4 rounded-4 shadow-sm text-center animate-scale-up" style={{
-                    backgroundColor: simResult.type === 'SUCCESS' ? '#e8f5ee' : simResult.type === 'WHITE_TICKET' ? '#fff9e6' : '#f8f9fa',
-                    border: simResult.type === 'SUCCESS' ? '2px solid #0b3c26' : simResult.type === 'WHITE_TICKET' ? '2px solid #f5a623' : '2px solid #6c757d'
-                  }}>
-                    <h5 className={`fw-extrabold mb-2 ${
-                      simResult.type === 'SUCCESS' ? 'text-success' : simResult.type === 'WHITE_TICKET' ? 'text-warning text-dark' : 'text-secondary'
-                    }`}>
-                      {simResult.title}
-                    </h5>
-
-                    {simResult.type === 'SUCCESS' && (
-                      <div className="row g-2 justify-content-center my-2">
-                        <div className="col-auto">
-                          <div className="p-2 px-3 bg-white rounded-3 border text-center shadow-sm">
-                            <span className="d-block text-muted fs-8">Tòa nhà</span>
-                            <span className="fs-5 fw-bold text-emerald">{simResult.tower}</span>
-                          </div>
-                        </div>
-                        <div className="col-auto">
-                          <div className="p-2 px-3 bg-white rounded-3 border text-center shadow-sm">
-                            <span className="d-block text-muted fs-8">Tầng</span>
-                            <span className="fs-5 fw-bold text-emerald">{simResult.floor}</span>
-                          </div>
-                        </div>
-                        <div className="col-auto">
-                          <div className="p-2 px-3 bg-white rounded-3 border text-center shadow-sm">
-                            <span className="d-block text-muted fs-8">Mã Căn</span>
-                            <span className="fs-5 fw-bold text-gold">{simResult.code}</span>
-                          </div>
-                        </div>
-                        <div className="col-auto">
-                          <div className="p-2 px-3 bg-white rounded-3 border text-center shadow-sm">
-                            <span className="d-block text-muted fs-8">Diện Tích</span>
-                            <span className="fs-5 fw-bold text-dark">{simResult.area}</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    <p className="text-muted small mb-0">{simResult.note}</p>
-                  </div>
-                )}
-
-                {/* Batch Statistics Cards (when batch drawn) */}
-                {batchResults && (
-                  <div className="row g-3 mb-4 text-center animate-fade-in">
-                    <div className="col-md-4">
-                      <div className="p-3 rounded-3 bg-success bg-opacity-10 border border-success border-opacity-25">
-                        <span className="d-block fs-7 text-success fw-bold text-uppercase">🎯 Trúng Quyền Mua / Vị trí</span>
-                        <span className="fs-2 fw-extrabold text-success">
-                          {batchResults.filter(r => r.type === 'SUCCESS').length} / 11
-                        </span>
-                        <span className="d-block fs-8 text-muted">Hồ sơ đã bốc được căn hộ</span>
-                      </div>
-                    </div>
-                    <div className="col-md-4">
-                      <div className="p-3 rounded-3 bg-warning bg-opacity-10 border border-warning border-opacity-25">
-                        <span className="d-block fs-7 text-warning text-dark fw-bold text-uppercase">⚪ Phiếu Trắng (Chuyển NV2)</span>
-                        <span className="fs-2 fw-extrabold text-warning text-dark">
-                          {batchResults.filter(r => r.type === 'WHITE_TICKET').length} / 11
-                        </span>
-                        <span className="d-block fs-8 text-muted">Được tiếp tục bốc đợt NV2</span>
-                      </div>
-                    </div>
-                    <div className="col-md-4">
-                      <div className="p-3 rounded-3 bg-secondary bg-opacity-10 border border-secondary border-opacity-25">
-                        <span className="d-block fs-7 text-secondary fw-bold text-uppercase">📋 Phiếu Dự Khuyết</span>
-                        <span className="fs-2 fw-extrabold text-secondary">
-                          {batchResults.filter(r => r.type === 'RESERVE').length} / 11
-                        </span>
-                        <span className="d-block fs-8 text-muted">Hồ sơ nằm trong danh sách dự bị</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* K-Group Filter Pills */}
-                <div className="d-flex align-items-center gap-1.5 flex-wrap mb-3 p-2 bg-light rounded-3 border">
-                  <span className="fw-bold fs-8 text-dark me-1">📋 Lọc theo Nhóm Đối Tượng K:</span>
-                  {['all', 'K1', 'K2', 'K3', 'K4', 'K5', 'K6', 'K7', 'K8', 'K9', 'K10', 'K11'].map(k => (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => { setKFilter(k); setCurrentPage(1); }}
-                      style={{
-                        padding: '4px 10px', borderRadius: '14px', border: '1px solid ' + (kFilter === k ? '#0b6640' : '#cbd5e1'), fontSize: '11px', fontWeight: 'bold', cursor: 'pointer',
-                        backgroundColor: kFilter === k ? '#0b6640' : '#fff', color: kFilter === k ? '#fff' : '#334155'
-                      }}
-                    >
-                      {k === 'all' ? '🌐 Tất cả K' : k}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Applicants Table & Results */}
-                <div className="table-responsive border rounded-3 overflow-hidden shadow-sm">
-                  <table className="table table-hover align-middle mb-0">
-                    <thead className="table-dark fs-8 text-uppercase">
-                      <tr>
-                        <th style={{ width: '5%' }}>STT</th>
-                        <th style={{ width: '12%' }}>Mã Hồ Sơ</th>
-                        <th style={{ width: '18%' }}>Họ &amp; Tên Người Dân</th>
-                        <th style={{ width: '13%' }}>Số CCCD</th>
-                        <th style={{ width: '22%' }}>Nhóm Đối Tượng (NĐ100)</th>
-                        <th style={{ width: '10%' }}>Ưu Tiên</th>
-                        <th style={{ width: '20%' }}>Kết Quả Bốc Thăm</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedDisplayApplicants.length === 0 ? (
-                        <tr>
-                          <td colSpan="7" className="text-center py-4 text-muted fs-7">
-                            Không tìm thấy hồ sơ nào thuộc nhóm K này.
-                          </td>
-                        </tr>
-                      ) : (
-                        paginatedDisplayApplicants.map((app, idx) => {
-                          const globalIdx = (currentPage - 1) * pageSize + idx;
-                          const isResultAvailable = !!batchResults;
-                          return (
-                            <tr key={app.id} className={app.type === 'SUCCESS' ? 'table-success bg-opacity-10' : ''}>
-                              <td className="fw-bold text-secondary text-center">{globalIdx + 1}</td>
-                              <td>
-                                <span className="badge bg-light text-dark border font-monospace fs-8">{app.id}</span>
-                              </td>
-                              <td>
-                                <div className="fw-bold text-dark fs-7">{app.name}</div>
-                                <span className="badge bg-secondary bg-opacity-10 text-dark border fs-8">NV: {app.preference}</span>
-                              </td>
-                              <td className="font-monospace fs-8 text-muted">{app.cccd}</td>
-                              <td className="fs-8 text-secondary">{app.category}</td>
-                              <td>
-                                <span className={`badge fs-8 ${app.priority.includes('Ưu tiên') ? 'bg-primary text-white' : 'bg-light text-dark border'}`}>
-                                  {app.priority}
-                                </span>
-                              </td>
-                              <td>
-                                {isResultAvailable ? (
-                                  <div className="d-flex align-items-center justify-content-between flex-wrap gap-1">
-                                    <div>
-                                      <span className={`badge px-2.5 py-1 rounded-pill mb-1 fs-8 ${app.badgeClass}`}>
-                                        {app.statusLabel}
-                                      </span>
-                                      {app.type === 'SUCCESS' && (
-                                        <div className="fs-8 fw-semibold text-success">
-                                          🏠 {app.details}
-                                        </div>
-                                      )}
-                                      {app.type === 'WHITE_TICKET' && (
-                                        <div className="fs-8 text-muted">
-                                          Chờ chuyển bốc NV2
-                                        </div>
-                                      )}
-                                      {app.type === 'RESERVE' && (
-                                        <div className="fs-8 text-secondary">
-                                          {app.details}
-                                        </div>
-                                      )}
-                                    </div>
-                                    <button 
-                                      type="button" 
-                                      className="btn btn-sm btn-outline-primary rounded-pill px-2 py-0.5 fs-8"
-                                      onClick={() => setUserResultModal(app)}
-                                      title="Xem Thông báo Popup"
-                                    >
-                                      🔔 Xem Popup
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <span className="badge bg-light text-muted border fs-8">Chờ mở bốc thăm...</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* PAGINATION CONTROLS */}
-                <div className="d-flex justify-content-between align-items-center mt-3 pt-3 border-top flex-wrap gap-2">
-                  <div className="text-muted fs-8">
-                    Hiển thị <strong>{filteredDisplayApplicants.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}</strong> – <strong>{Math.min(currentPage * pageSize, filteredDisplayApplicants.length)}</strong> trên tổng số <strong>{filteredDisplayApplicants.length}</strong> hồ sơ bốc thăm
-                  </div>
-
-                  <div className="d-flex align-items-center gap-1.5">
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-secondary rounded-pill px-2.5 py-1 fs-8 fw-semibold"
-                      disabled={currentPage === 1}
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    >
-                      ◀ Trang trước
-                    </button>
-
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                      <button
-                        key={page}
-                        type="button"
-                        className={`btn btn-sm rounded-circle fw-bold fs-8 ${currentPage === page ? 'btn-emerald text-white' : 'btn-light text-dark border'}`}
-                        style={{ width: '32px', height: '32px', padding: 0 }}
-                        onClick={() => setCurrentPage(page)}
-                      >
-                        {page}
-                      </button>
-                    ))}
-
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-secondary rounded-pill px-2.5 py-1 fs-8 fw-semibold"
-                      disabled={currentPage >= totalPages}
-                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    >
-                      Trang sau ▶
-                    </button>
-                  </div>
-                </div>
-
-                {/* Section Tài khoản Đăng nhập Demo phục vụ Test các Tính năng & Giai đoạn */}
-                <div className="mt-4 p-3 bg-light rounded-3 border">
-                  <div className="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-                    <div className="fw-bold text-emerald fs-7 d-flex align-items-center gap-1.5">
-                      <span>🔑 Danh Sách Tài Khoản Demo Test Đầy Đủ Các Nút Thao Tác &amp; Giai Đoạn Hồ Sơ</span>
-                      <span className="badge bg-success text-white fs-8">Mật khẩu chung: 123456</span>
-                    </div>
-                    <span className="text-muted fs-8">Có thể đăng nhập bằng Số điện thoại, Email hoặc Số CCCD</span>
-                  </div>
-
-                  <div className="row g-2">
-                    {/* Nút thao tác nhanh Demo Accounts */}
-                    <div className="col-12">
-                      <div className="p-2 bg-warning bg-opacity-10 border border-warning rounded-3 fs-8 mb-1 fw-semibold text-dark">
-                        ⚡ Tài khoản công dân test 4 Nút Thao Tác Nhanh Admin:
-                      </div>
-                    </div>
-
-                    <div className="col-md-6 col-lg-3">
-                      <div className="p-2 bg-white rounded border fs-8 h-100 border-warning">
-                        <div className="fw-bold text-dark">🔴 Vũ Đức Phong (HS-2026-5001)</div>
-                        <div className="text-warning-emphasis fw-semibold fs-8">Trạng thái: Trả về bổ sung</div>
-                        <div className="text-muted">📱 SĐT: <code className="text-primary">0985555001</code></div>
-                        <div className="text-muted">🪪 CCCD: <code className="text-dark">026091005001</code></div>
-                      </div>
-                    </div>
-
-                    <div className="col-md-6 col-lg-3">
-                      <div className="p-2 bg-white rounded border fs-8 h-100 border-danger">
-                        <div className="fw-bold text-dark">❌ Lý Thị Tú (HS-2026-4001)</div>
-                        <div className="text-danger fw-semibold fs-8">Trạng thái: Từ chối (Sai nhóm K)</div>
-                        <div className="text-muted">📱 SĐT: <code className="text-primary">0984444001</code></div>
-                        <div className="text-muted">🪪 CCCD: <code className="text-dark">031087004001</code></div>
-                      </div>
-                    </div>
-
-                    <div className="col-md-6 col-lg-3">
-                      <div className="p-2 bg-white rounded border fs-8 h-100 border-purple" style={{ borderColor: '#7c3aed' }}>
-                        <div className="fw-bold text-dark">🟣 Hoàng Thị Kim (HS-2026-7001)</div>
-                        <div className="text-purple fw-semibold fs-8" style={{ color: '#7c3aed' }}>Trạng thái: GĐ 2 - Tổ kiểm soát</div>
-                        <div className="text-muted">📱 SĐT: <code className="text-primary">0987777001</code></div>
-                        <div className="text-muted">🪪 CCCD: <code className="text-dark">030193007001</code></div>
-                      </div>
-                    </div>
-
-                    <div className="col-md-6 col-lg-3">
-                      <div className="p-2 bg-white rounded border fs-8 h-100 border-primary">
-                        <div className="fw-bold text-dark">🟠 Phạm Thị Nga (HS-2026-6001)</div>
-                        <div className="text-primary fw-semibold fs-8">Trạng thái: GĐ 3 - Hẹn nộp bản gốc</div>
-                        <div className="text-muted">📱 SĐT: <code className="text-primary">0986666001</code></div>
-                        <div className="text-muted">🪪 CCCD: <code className="text-dark">017195006001</code></div>
-                      </div>
-                    </div>
-
-                    {/* Danh sách 11 hồ sơ bốc thăm */}
-                    <div className="col-12 mt-2">
-                      <div className="p-2 bg-success bg-opacity-10 border border-success rounded-3 fs-8 mb-1 fw-semibold text-dark">
-                        🟢 Danh sách tài khoản 11 Hồ sơ đủ điều kiện bốc thăm (K1 - K11):
-                      </div>
-                    </div>
-
-                    {sampleApplicants.map((app, idx) => (
-                      <div key={app.id} className="col-md-4 col-sm-6">
-                        <div className="p-2 bg-white rounded border fs-8">
-                          <div className="fw-bold text-dark">{idx + 1}. {app.name} ({app.id})</div>
-                          <div className="text-muted">📱 SĐT: <code className="text-primary">{`09811110${(idx + 1).toString().padStart(2, '0')}`}</code></div>
-                          <div className="text-muted">🪪 CCCD: <code className="text-dark">{app.cccd}</code></div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="mt-3 text-end text-muted fs-8">
-                  * Danh sách 11 hồ sơ đã được thẩm định điều kiện nộp theo đúng Nghị định 100/2015/NĐ-CP &amp; NĐ 261/2025/NĐ-CP.
+                <div>
+                  <h5 className="fw-bold text-dark mb-1">Cổng Đăng Ký Tham Gia Bốc Thăm NOXH</h5>
+                  <p className="text-secondary small mb-0">
+                    Tra cứu điều kiện tham gia bốc thăm chính thức và thực hiện đăng ký tham gia ca bốc thăm quyền mua &amp; vị trí căn hộ tại dự án Marina Living.
+                  </p>
                 </div>
               </div>
             </div>
+
+            <div className="row g-4 mb-4">
+              {/* Left Column: Eligibility Conditions Checklist */}
+              <div className="col-lg-6">
+                <div className="card border-0 shadow-sm rounded-4 h-100">
+                  <div className="card-header bg-emerald text-white py-3 px-4">
+                    <h5 className="fw-bold mb-0">📝 Điều Kiện Đăng Ký Tham Gia (Quy định)</h5>
+                  </div>
+                  <div className="card-body p-4">
+                    <p className="text-muted small">
+                      Theo quy chế bốc thăm của dự án Marina Living Hạ Long, để được tham gia bốc thăm, khách hàng cần đáp ứng đủ các điều kiện sau:
+                    </p>
+                    
+                    <div className="d-flex flex-column gap-3 mt-3">
+                      <div className="d-flex align-items-start gap-2.5">
+                        <span className="text-success fw-bold fs-5">✓</span>
+                        <div>
+                          <strong className="text-dark fs-7">1. Hồ sơ đã được thẩm định &amp; Phê duyệt (Approved)</strong>
+                          <p className="text-muted fs-8 mb-0">Hồ sơ đăng ký mua nhà ở xã hội phải được tổ tiếp nhận và tổ kiểm soát chấm đạt yêu cầu, có tên trong danh sách công bố.</p>
+                        </div>
+                      </div>
+                      
+                      <div className="d-flex align-items-start gap-2.5">
+                        <span className="text-success fw-bold fs-5">✓</span>
+                        <div>
+                          <strong className="text-dark fs-7">2. Hoàn thành đối chiếu Bản gốc hồ sơ giấy</strong>
+                          <p className="text-muted fs-8 mb-0">Đã nộp và đối chiếu đầy đủ các giấy tờ chứng minh đối tượng, điều kiện thu nhập và cư trú bản gốc tại bộ phận lưu trữ.</p>
+                        </div>
+                      </div>
+
+                      <div className="d-flex align-items-start gap-2.5">
+                        <span className="text-success fw-bold fs-5">✓</span>
+                        <div>
+                          <strong className="text-dark fs-7">3. Đăng ký tham gia trước hạn chót ca bốc thăm</strong>
+                          <p className="text-muted fs-8 mb-0">Khách hàng cần đăng ký tham gia trực tuyến hoặc trực tiếp tại văn phòng CĐT để Ban tổ chức chốt danh sách in phiếu bốc thăm.</p>
+                        </div>
+                      </div>
+
+                      <div className="d-flex align-items-start gap-2.5">
+                        <span className="text-success fw-bold fs-5">✓</span>
+                        <div>
+                          <strong className="text-dark fs-7">4. Mang đầy đủ giấy tờ tùy thân (CCCD gốc) khi tham dự</strong>
+                          <p className="text-muted fs-8 mb-0">Người đứng tên hoặc người được ủy quyền hợp pháp phải mang theo Căn cước công dân bản gốc để đối chiếu tại bàn check-in.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Citizen Login & Enrollment Status */}
+              <div className="col-lg-6">
+                <div className="card border-0 shadow-sm rounded-4 h-100">
+                  <div className="card-header bg-emerald text-white py-3 px-4">
+                    <h5 className="fw-bold mb-0">👤 Trạng Tư Cách Đăng Ký Của Bạn</h5>
+                  </div>
+                  <div className="card-body p-4 d-flex flex-column justify-content-between">
+                    {!currentUser ? (
+                      <div className="text-center py-4 my-auto">
+                        <span className="fs-1 d-block mb-3">🔒</span>
+                        <h6 className="fw-bold text-dark mb-2">Chưa Đăng Nhập Tài Khoản</h6>
+                        <p className="text-muted small mb-4">
+                          Vui lòng đăng nhập bằng tài khoản công dân (Số điện thoại) để kiểm tra điều kiện hồ sơ và đăng ký bốc thăm trực tuyến.
+                        </p>
+                        <Link href="/?auth=login" className="btn btn-emerald px-4 rounded-2 fw-bold shadow-sm">
+                          🔑 Đăng Nhập Ngay
+                        </Link>
+                      </div>
+                    ) : (
+                      <div className="h-100 d-flex flex-column justify-content-between">
+                        {currentUser && (currentUser.role === 'admin' || currentUser.role?.startsWith('officer_')) ? (
+                          <div className="text-center py-4 my-auto animate-scale-up">
+                            <span className="fs-1 d-block mb-3">👑</span>
+                            <h6 className="fw-bold text-emerald mb-2">Tài Khoản Ban Tổ Chức (Cán Bộ)</h6>
+                            <p className="text-muted small mb-4">
+                              Họ tên: <strong>{currentUser.fullName}</strong><br />
+                              Số điện thoại: <strong>{currentUser.phoneNumber}</strong><br />
+                              Vai trò: <span className="badge bg-gold text-dark fs-8">Cán bộ bốc thăm</span>
+                            </p>
+                            <Link href="/admin" className="btn btn-emerald w-100 py-2.5 rounded-2 fw-bold shadow hover-scale d-inline-flex align-items-center justify-content-center gap-2 text-decoration-none">
+                              🎮 Đi Đến Trang Bốc Thăm (Quản Trị)
+                            </Link>
+                          </div>
+                        ) : (
+                          <>
+                            <div>
+                              {/* User info card */}
+                              <div className="p-3 bg-light rounded-3 border mb-3">
+                                <div className="fw-bold text-dark fs-7 mb-1">👤 Thông tin tài khoản:</div>
+                                <div className="text-secondary small">
+                                  Họ &amp; Tên: <strong>{currentUser.fullName || 'Công dân'}</strong><br />
+                                  Số điện thoại: <strong>{currentUser.phoneNumber}</strong><br />
+                                  Email: <strong>{currentUser.email || 'Chưa cập nhật'}</strong>
+                                </div>
+                              </div>
+
+                              {/* Verification status card */}
+                              {userApp ? (
+                                <div className="p-3 rounded-3 border border-success bg-success bg-opacity-10 mb-3 animate-fade-in">
+                                  <div className="d-flex justify-content-between align-items-center mb-2">
+                                    <span className="badge bg-success text-white">🟢 ĐỦ ĐIỀU KIỆN</span>
+                                    <span className="small text-muted fw-bold">Mã HS: {userApp.id}</span>
+                                  </div>
+                                  <p className="text-success-emphasis small mb-0">
+                                    Hồ sơ của bạn đã được kiểm soát đạt yêu cầu (Stage 4) và sẵn sàng tham gia bốc thăm.
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="p-3 rounded-3 border border-warning bg-warning bg-opacity-10 mb-3 animate-fade-in">
+                                  <div className="d-flex justify-content-between align-items-center mb-2">
+                                    <span className="badge bg-warning text-dark">⏳ CHƯA ĐỦ ĐIỀU KIỆN BỐC THĂM</span>
+                                  </div>
+                                  <p className="text-warning-emphasis small mb-0">
+                                    Hệ thống chưa tìm thấy hồ sơ được duyệt (Stage 4) ứng với tài khoản này. Vui lòng liên hệ Tổ tiếp nhận để kiểm tra tiến trình phê duyệt hồ sơ của bạn.
+                                  </p>
+                                  <Link href="/portal" className="btn btn-outline-secondary btn-sm rounded-2 py-1.5 fw-bold text-decoration-none d-block text-center mt-3 fs-8">
+                                    🏛️ Đi đến Cổng cá nhân (Portal) kiểm tra hồ sơ
+                                  </Link>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Actions block */}
+                            {userApp && (
+                              <div className="mt-3 text-center border-top pt-3">
+                                {isJoined ? (
+                                  <div className="animate-scale-up">
+                                    <div className="p-3 bg-white border border-success rounded-3 shadow-sm mb-3">
+                                      <div className="text-success fw-bold fs-6 mb-1">🎉 ĐÃ ĐĂNG KÝ THAM GIA THÀNH CÔNG</div>
+                                      <div className="text-muted small">
+                                        Mã đăng ký: <code className="fw-bold text-primary">REG-{userApp.id}</code> | Ca bốc thăm: <strong>{userApp.preference === '3PN' ? 'Buổi chiều' : 'Buổi sáng'}</strong>
+                                      </div>
+                                    </div>
+                                    <div className="d-flex flex-column gap-2">
+                                      <Link 
+                                        href="/portal" 
+                                        className="btn btn-emerald rounded-2 py-2.5 fw-bold text-decoration-none shadow hover-scale d-inline-flex align-items-center justify-content-center gap-2"
+                                      >
+                                        🏛️ Đi Đến Trang Bốc Thăm (Cổng Cá Nhân)
+                                      </Link>
+                                      <button 
+                                        onClick={handleCancelJoin}
+                                        className="btn btn-outline-danger btn-sm rounded-2 py-1.5 fw-bold"
+                                      >
+                                        ❌ Hủy đăng ký bốc thăm
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="animate-scale-up">
+                                    <p className="small text-muted mb-3">
+                                      Vui lòng nhấn nút bên dưới để xác nhận đăng ký tham gia ca bốc thăm căn hộ Marina Living Hạ Long:
+                                    </p>
+                                    <button 
+                                      onClick={handleJoinLottery}
+                                      className="btn btn-emerald btn-lg px-4 py-2.5 rounded-2 fw-bold shadow hover-scale w-100 animate-pulse"
+                                    >
+                                      🟢 Đăng Ký Tham Gia Bốc Thăm
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+
           </div>
         )}
 
@@ -1020,10 +836,10 @@ export default function QuyCheBocThamPage() {
             Mọi câu hỏi liên quan đến thủ tục đăng ký và danh sách hồ sơ đủ điều kiện bốc thăm, xin vui lòng liên hệ hotline hỗ trợ.
           </p>
           <div className="d-flex justify-content-center gap-3">
-            <Link href="/cungbanmuanha" className="btn btn-emerald rounded-pill px-4">
+            <Link href="/cungbanmuanha" className="btn btn-emerald rounded-2 px-4">
               📘 Xem Cẩm Nang Mua Nhà
             </Link>
-            <a href="tel:19006666" className="btn btn-outline-success rounded-pill px-4 fw-bold">
+            <a href="tel:19006666" className="btn btn-outline-success rounded-2 px-4 fw-bold">
               📞 Hotline: 1900 6666
             </a>
           </div>
@@ -1048,7 +864,7 @@ export default function QuyCheBocThamPage() {
                       {userResultModal.type === 'SUCCESS' ? '🎉' : userResultModal.type === 'WHITE_TICKET' ? '⚪' : '📋'}
                     </span>
                     <div>
-                      <span className={`badge rounded-pill fs-8 ${userResultModal.type === 'WHITE_TICKET' ? 'bg-dark text-white' : 'bg-white text-dark'}`}>
+                      <span className={`badge rounded-2 fs-8 ${userResultModal.type === 'WHITE_TICKET' ? 'bg-dark text-white' : 'bg-white text-dark'}`}>
                         THÔNG BÁO KẾT QUẢ BỐC THĂM KẾT QUẢ
                       </span>
                       <h6 className="modal-title fw-bold mb-0 text-truncate" style={{ maxWidth: '420px' }}>
@@ -1080,7 +896,7 @@ export default function QuyCheBocThamPage() {
                   {/* Result Type Banner & Details */}
                   {userResultModal.type === 'SUCCESS' && (
                     <div className="p-4 rounded-3 text-center bg-success bg-opacity-10 border border-success">
-                      <div className="badge bg-success text-white px-3.5 py-1.5 rounded-pill mb-2 fw-bold fs-7 shadow-sm">
+                      <div className="badge bg-success text-white px-3.5 py-1.5 rounded-2 mb-2 fw-bold fs-7 shadow-sm">
                         🏆 CHÚC MỪNG BẠN ĐÃ BỐC TRÚNG CĂN HỘ!
                       </div>
                       <p className="text-dark small mb-3">
@@ -1120,7 +936,7 @@ export default function QuyCheBocThamPage() {
 
                   {userResultModal.type === 'WHITE_TICKET' && (
                     <div className="p-4 rounded-3 text-center bg-warning bg-opacity-15 border border-warning">
-                      <div className="badge bg-warning text-dark px-3 py-1.5 rounded-pill mb-2 fw-bold fs-7 shadow-sm">
+                      <div className="badge bg-warning text-dark px-3 py-1.5 rounded-2 mb-2 fw-bold fs-7 shadow-sm">
                         ⚪ PHIẾU TRẮNG - CHUYỂN NGUYỆN VỌNG 2
                       </div>
                       <p className="text-dark small mb-2">
@@ -1134,7 +950,7 @@ export default function QuyCheBocThamPage() {
 
                   {userResultModal.type === 'RESERVE' && (
                     <div className="p-4 rounded-3 text-center bg-secondary bg-opacity-10 border border-secondary">
-                      <div className="badge bg-secondary text-white px-3 py-1.5 rounded-pill mb-2 fw-bold fs-7 shadow-sm">
+                      <div className="badge bg-secondary text-white px-3 py-1.5 rounded-2 mb-2 fw-bold fs-7 shadow-sm">
                         📋 PHIẾU DỰ KHUYẾT SỐ THỨ TỰ #{userResultModal.reserveNum}
                       </div>
                       <p className="text-dark small mb-2">
@@ -1152,13 +968,75 @@ export default function QuyCheBocThamPage() {
                   <span className="text-muted fs-8">Hội đồng bốc thăm NOXH Marina Living</span>
                   <button 
                     type="button" 
-                    className="btn btn-secondary btn-sm rounded-pill px-4 fw-semibold fs-8"
+                    className="btn btn-secondary btn-sm rounded-2 px-4 fw-semibold fs-8"
                     onClick={() => setUserResultModal(null)}
                   >
                     Đóng Thông Báo
                   </button>
                 </div>
 
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Docx Viewer Modal */}
+        {docxModal && (
+          <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)', zIndex: 1060 }}>
+            <div className="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" style={{ maxWidth: '92vw', height: '92vh' }}>
+              <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden h-100">
+                {/* Modal Header */}
+                <div className="modal-header py-3 px-4 d-flex justify-content-between align-items-center border-bottom bg-white">
+                  <div className="d-flex align-items-center gap-2">
+                    <span className="fs-5">📄</span>
+                    <h5 className="modal-title fw-extrabold m-0 fs-6" style={{ color: '#065f46' }}>
+                      {docxModal.title}
+                    </h5>
+                  </div>
+                  <div className="d-flex align-items-center gap-2">
+                    <a 
+                      href={docxModal.url} 
+                      download 
+                      className="btn btn-sm rounded-2 px-3 py-1 d-inline-flex align-items-center gap-1 text-decoration-none fw-semibold shadow-sm"
+                      style={{ backgroundColor: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: '0.8rem' }}
+                    >
+                      📥 Tải xuống (.docx)
+                    </a>
+                    <button 
+                      type="button" 
+                      className="btn-close" 
+                      style={{ opacity: 0.8 }}
+                      onClick={() => setDocxModal(null)}
+                    ></button>
+                  </div>
+                </div>
+
+                {/* Modal Body */}
+                <div className="modal-body p-4 bg-light overflow-auto position-relative" style={{ height: 'calc(92vh - 120px)' }}>
+                  {isDocLoading && (
+                    <div className="d-flex flex-column align-items-center justify-content-center py-5">
+                      <div className="spinner-border text-emerald mb-3" role="status" style={{ width: '3rem', height: '3rem' }}></div>
+                      <p className="text-muted fw-semibold">Đang đọc và hiển thị văn bản quy chế (.docx)...</p>
+                    </div>
+                  )}
+                  <div 
+                    ref={docxContainerRef} 
+                    className="docx-viewer-content bg-white p-4 rounded-3 shadow-sm mx-auto"
+                    style={{ maxWidth: '950px', minHeight: '500px' }}
+                  />
+                </div>
+
+                {/* Modal Footer */}
+                <div className="modal-footer bg-white py-2 px-4 border-top d-flex justify-content-between align-items-center">
+                  <span className="text-muted fs-8">Dự án NOXH Marina Living Hạ Long</span>
+                  <button 
+                    type="button" 
+                    className="btn btn-secondary btn-sm rounded-2 px-4 fw-semibold fs-8"
+                    onClick={() => setDocxModal(null)}
+                  >
+                    Đóng Xem Văn Bản
+                  </button>
+                </div>
               </div>
             </div>
           </div>

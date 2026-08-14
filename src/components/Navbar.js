@@ -209,15 +209,15 @@ export default function Navbar({ session }) {
           <div className="mnav-actions">
             {session ? (
               <>
-                <Link className="btn btn-emerald rounded-pill w-100 text-center" href={(session.role === 'admin' || session.role?.startsWith('officer_')) ? '/admin' : '/portal'}>
+                <Link className="btn btn-emerald rounded-2 w-100 text-center" href={(session.role === 'admin' || session.role?.startsWith('officer_')) ? '/admin' : '/portal'}>
                   👤 {session.fullName}
                 </Link>
-                <button type="button" className="btn btn-light rounded-pill w-100" onClick={handleLogout}>Đăng xuất</button>
+                <button type="button" className="btn btn-light rounded-2 w-100" onClick={handleLogout}>Đăng xuất</button>
               </>
             ) : (
               <>
-                <button type="button" className="btn btn-light rounded-pill w-100 brand-login" data-bs-dismiss="offcanvas" data-bs-toggle="modal" data-bs-target="#loginModal">Đăng Nhập</button>
-                <button type="button" className="btn btn-emerald rounded-pill w-100" data-bs-dismiss="offcanvas" data-bs-toggle="modal" data-bs-target="#registerModal">Đăng Ký Mua</button>
+                <button type="button" className="btn btn-light rounded-2 w-100 brand-login" data-bs-dismiss="offcanvas" data-bs-toggle="modal" data-bs-target="#loginModal">Đăng Nhập</button>
+                <button type="button" className="btn btn-emerald rounded-2 w-100" data-bs-dismiss="offcanvas" data-bs-toggle="modal" data-bs-target="#registerModal">Đăng Ký Mua</button>
               </>
             )}
           </div>

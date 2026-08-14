@@ -2,11 +2,35 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { readQrFromImageFile, parseCccdQr, sampleCccdQrData } from '@/lib/cccdQr';
+import { compressImageFile } from '@/lib/imageCompressor';
 import { renderAsync } from 'docx-preview';
 
 export default function PortalClient({ session, initialApplications }) {
   const [apps, setApps] = useState(initialApplications || []);
   const activeApp = apps.length > 0 ? apps[0] : null;
+
+  // Tự động xác định bước khi mở/đăng nhập:
+  // - Nếu hồ sơ đã hoàn thành 100% hoặc đã gửi duyệt -> Bước 4
+  // - Nếu đã có dữ liệu Bước 1 & 2 -> Chuyển thẳng Bước 3
+  // - Mặc định chưa khai -> Bước 1
+  const determineInitialStep = () => {
+    if (!activeApp) return 1;
+    if (activeApp.status && activeApp.status !== 'draft') return 4;
+
+    // Check xem hồ sơ đã nộp đủ 100% chưa
+    const docs = activeApp.documents || {};
+    const docCount = Object.keys(docs).filter(k => docs[k] && docs[k].url).length;
+    const hasCccd = activeApp.cccdImage || activeApp.cccdFrontImage;
+    if (hasCccd && docCount >= 7) return 4;
+
+    // Nếu đã chọn thông tin Bước 1 hoặc Bước 2 -> Vào thẳng Bước 3
+    if (activeApp.infoChannel || activeApp.targetObject || activeApp.unitType) {
+      return 3;
+    }
+    return 1;
+  };
+
+  const initialCalculatedStep = determineInitialStep();
 
   const isSubmittedApp = activeApp && activeApp.status && activeApp.status !== 'draft';
 
@@ -14,7 +38,7 @@ export default function PortalClient({ session, initialApplications }) {
   const [viewMode, setViewMode] = useState(isSubmittedApp ? 'view' : 'edit'); // 'view' | 'edit'
 
   // Wizard Step State (1 -> 6)
-  const [currentFormStep, setCurrentFormStep] = useState(isSubmittedApp ? 4 : 1);
+  const [currentFormStep, setCurrentFormStep] = useState(initialCalculatedStep);
 
   // Mobile customer info collapse toggle
   const [showCustomerInfoMobile, setShowCustomerInfoMobile] = useState(false);
@@ -142,17 +166,17 @@ export default function PortalClient({ session, initialApplications }) {
 
   const isAppSubmitted = activeApp && activeApp.status !== 'draft';
 
-  // Documents state (doc1 -> doc9) - Null by default for new/draft applications
+  // Documents state (doc1 -> doc9) - Always load existing documents from activeApp if present
   const defaultDocs = {
-    doc1: isAppSubmitted ? (activeApp?.documents?.doc1 || null) : null,
-    doc2: isAppSubmitted ? (activeApp?.documents?.doc2 || null) : null,
-    doc3: isAppSubmitted ? (activeApp?.documents?.doc3 || null) : null,
-    doc4: isAppSubmitted ? (activeApp?.documents?.doc4 || null) : null,
-    doc5: isAppSubmitted ? (activeApp?.documents?.doc5 || null) : null,
-    doc6: isAppSubmitted ? (activeApp?.documents?.doc6 || null) : null,
-    doc7: isAppSubmitted ? (activeApp?.documents?.doc7 || null) : null,
-    doc8: isAppSubmitted ? (activeApp?.documents?.doc8 || null) : null,
-    doc9: isAppSubmitted ? (activeApp?.documents?.doc9 || null) : null,
+    doc1: activeApp?.documents?.doc1 || null,
+    doc2: activeApp?.documents?.doc2 || null,
+    doc3: activeApp?.documents?.doc3 || null,
+    doc4: activeApp?.documents?.doc4 || null,
+    doc5: activeApp?.documents?.doc5 || null,
+    doc6: activeApp?.documents?.doc6 || null,
+    doc7: activeApp?.documents?.doc7 || null,
+    doc8: activeApp?.documents?.doc8 || null,
+    doc9: activeApp?.documents?.doc9 || null,
   };
 
   const [uploadedDocs, setUploadedDocs] = useState(defaultDocs);
@@ -200,6 +224,45 @@ export default function PortalClient({ session, initialApplications }) {
     if (target) {
       if (target.status === 'rejected_wrong_k' || target.status === 'returned_for_supplement' || target.status === 'rejected') {
         setRejectionNotificationModal(target);
+      }
+      if (target.infoChannel) setInfoChannel(target.infoChannel);
+      if (target.targetObject) setTargetObject(target.targetObject);
+      if (target.unitType) setUnitType(target.unitType);
+      if (target.maritalStatus) setMaritalStatus(target.maritalStatus);
+      if (target.fullName) setFullName(target.fullName);
+      if (target.email) setEmail(target.email);
+      if (target.cccdNumber) setCccdNumber(target.cccdNumber);
+      if (target.dob) setDob(target.dob);
+      if (target.gender) setGender(target.gender);
+      if (target.address) setAddress(target.address);
+      if (target.issueDate) setIssueDate(target.issueDate);
+      if (target.oldCmnd) setOldCmnd(target.oldCmnd);
+
+      // CCCD Image previews
+      if (target.cccdFrontImage || target.cccdImage) setCccdFrontPreview(target.cccdFrontImage || target.cccdImage);
+      if (target.cccdBackImage) setCccdBackPreview(target.cccdBackImage);
+      if (target.cccdImage) setCccdPreview(target.cccdImage);
+
+      // Sync documents
+      if (target.documents) {
+        setUploadedDocs(prev => ({
+          ...prev,
+          ...target.documents
+        }));
+      }
+
+      // Tự động xác định bước thông minh
+      if (target.status && target.status !== 'draft') {
+        setCurrentFormStep(4);
+      } else {
+        const docs = target.documents || {};
+        const docCount = Object.keys(docs).filter(k => docs[k] && docs[k].url).length;
+        const hasCccd = target.cccdImage || target.cccdFrontImage;
+        if (hasCccd && docCount >= 7) {
+          setCurrentFormStep(4);
+        } else if (target.infoChannel || target.targetObject || target.unitType) {
+          setCurrentFormStep(3);
+        }
       }
     }
   }, [activeApp, apps]);
@@ -411,6 +474,10 @@ export default function PortalClient({ session, initialApplications }) {
     }
   };
 
+  useEffect(() => {
+    reloadApplications();
+  }, []);
+
   // Xử lý kết quả giải mã QR CCCD
   const processQrResult = (rawQrString) => {
     const parsed = parseCccdQr(rawQrString);
@@ -555,22 +622,22 @@ export default function PortalClient({ session, initialApplications }) {
 
     let patchBody = { status: targetStatus };
     if (targetStatus === 'returned_for_supplement') {
-      patchBody.notes = '⚠️ Ban quản lý thông báo yêu cầu bổ sung: Thiếu Giấy xác nhận chưa có nhà ở Mẫu số 02 có dấu đỏ phường/xã. Vui lòng bổ sung tệp đính kèm.';
+      patchBody.notes = 'Thiếu Giấy xác nhận chưa có nhà ở Mẫu số 02 có dấu đỏ phường/xã. Vui lòng bổ sung tệp đính kèm.';
       patchBody.stage = 1;
     } else if (targetStatus === 'rejected_wrong_k') {
-      patchBody.notes = '❌ Ban quản lý từ chối do chọn sai nhóm K: Kê khai sai đối tượng K1 trong khi giấy tờ đính kèm là Sinh viên (K11). Yêu cầu công dân nộp lại hồ sơ từ đầu.';
+      patchBody.notes = 'Từ chối do chọn sai nhóm K. Yêu cầu công dân nộp lại hồ sơ từ đầu.';
       patchBody.stage = 1;
     } else if (targetStatus === 'to_kiem_soat') {
-      patchBody.notes = '⚡ Đã Bypass Tổ Tiếp Nhận → Chuyển hồ sơ lên Tổ Kiểm Soát thẩm định dữ liệu BHXH.';
+      patchBody.notes = '';
       patchBody.stage = 2;
     } else if (targetStatus === 'bo_sung_ban_goc') {
-      patchBody.notes = '🟠 Tổ Kiểm Soát đã duyệt sơ bộ. Hẹn người dân mang bản gốc đối chiếu tại bàn tiếp nhận số 02.';
+      patchBody.notes = '';
       patchBody.stage = 3;
     } else if (targetStatus === 'approved') {
-      patchBody.notes = '🟢 Hồ sơ đã thẩm định đạt 100% & Đã được chuyển vào danh sách bốc thăm căn hộ chính thức.';
+      patchBody.notes = '';
       patchBody.stage = 4;
     } else if (targetStatus === 'submitted') {
-      patchBody.notes = 'Hồ sơ mới nộp, đang chờ Tổ tiếp nhận thẩm định.';
+      patchBody.notes = '';
       patchBody.stage = 1;
     }
 
@@ -661,10 +728,45 @@ export default function PortalClient({ session, initialApplications }) {
   // Submit / Update Application
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Validate tất cả các trường bắt buộc (có dấu sao đỏ *)
+    const missingFields = [];
+
+    // 1. CCCD 2 mặt bắt buộc
+    const hasCccdFront = cccdFrontPreview || cccdFrontFile || activeApp?.cccdFrontImage || activeApp?.cccdImage;
+    const hasCccdBack = cccdBackPreview || cccdBackFile || activeApp?.cccdBackImage;
+    if (!hasCccdFront) missingFields.push('Ảnh Mặt trước CCCD');
+    if (!hasCccdBack) missingFields.push('Ảnh Mặt sau CCCD');
+
+    // 2. Thông tin cá nhân bắt buộc
+    if (!cccdNumber && !qrParsedData?.cccdNumber) missingFields.push('Số CCCD (12 số)');
+    if (!fullName && !qrParsedData?.fullName && !session?.fullName) missingFields.push('Họ và tên');
+
+    // 3. Tài liệu bắt buộc (doc có required: true)
+    const requiredDocIds = documentList.filter(d => d.required).map(d => d.id);
+    requiredDocIds.forEach(docId => {
+      const hasUploaded = uploadedDocs[docId] || filesToUpload[docId];
+      if (!hasUploaded) {
+        const docInfo = documentList.find(d => d.id === docId);
+        const shortTitle = docInfo ? `Tài liệu #${docInfo.num} (${docId.toUpperCase()})` : docId.toUpperCase();
+        missingFields.push(shortTitle);
+      }
+    });
+
+    if (missingFields.length > 0) {
+      setMessage({
+        text: `⚠️ Vui lòng bổ sung đầy đủ các mục bắt buộc trước khi nộp hồ sơ:\n• ${missingFields.join('\n• ')}`,
+        type: 'danger'
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
     if (!agreedTerms1 || !agreedTerms2) {
       setMessage({ text: '⚠️ Bạn vui lòng tích chọn đồng ý 2 nội dung điều khoản để tiếp tục.', type: 'warning' });
       return;
     }
+
 
     setIsLoading(true);
     setQueueTaskType('Nộp & Mã Hóa Hồ Sơ Số');
@@ -696,9 +798,18 @@ export default function PortalClient({ session, initialApplications }) {
         fd.append('ekycData', JSON.stringify(ekycExtractedData || { verified: true }));
       }
 
-      if (cccdFrontFile) fd.append('cccdFrontFile', cccdFrontFile);
-      if (cccdBackFile) fd.append('cccdBackFile', cccdBackFile);
-      if (cccdFile) fd.append('cccdFile', cccdFile);
+      if (cccdFrontFile) {
+        const compressedFront = await compressImageFile(cccdFrontFile);
+        fd.append('cccdFrontFile', compressedFront);
+      }
+      if (cccdBackFile) {
+        const compressedBack = await compressImageFile(cccdBackFile);
+        fd.append('cccdBackFile', compressedBack);
+      }
+      if (cccdFile) {
+        const compressedCccd = await compressImageFile(cccdFile);
+        fd.append('cccdFile', compressedCccd);
+      }
       if (dob) fd.append('dob', dob);
       if (gender) fd.append('gender', gender);
       if (address) fd.append('address', address);
@@ -706,14 +817,30 @@ export default function PortalClient({ session, initialApplications }) {
       if (oldCmnd) fd.append('oldCmnd', oldCmnd);
       if (qrParsedData) fd.append('qrParsedData', JSON.stringify(qrParsedData));
 
-      Object.keys(filesToUpload).forEach(k => {
-        fd.append(k, filesToUpload[k]);
-      });
+      for (const k of Object.keys(filesToUpload)) {
+        const fileObj = filesToUpload[k];
+        if (fileObj) {
+          const compressedDoc = await compressImageFile(fileObj);
+          fd.append(k, compressedDoc);
+        }
+      }
 
-      const res = await fetch('/api/applications', {
-        method: 'POST',
-        body: fd
-      });
+      // Auto Retry 3 lần nếu trục trặc kết nối do cao điểm
+      let res = null;
+      let attempts = 0;
+      while (attempts < 3) {
+        try {
+          attempts++;
+          res = await fetch('/api/applications', {
+            method: 'POST',
+            body: fd
+          });
+          if (res.ok) break;
+        } catch (fetchErr) {
+          if (attempts >= 3) throw fetchErr;
+          await new Promise(r => setTimeout(r, 1000 * attempts));
+        }
+      }
       const data = await res.json();
 
       if (data.success) {
@@ -794,23 +921,24 @@ export default function PortalClient({ session, initialApplications }) {
           </div>
 
           {/* Header Action Tools */}
-          <div className="d-flex align-items-center gap-2 ms-auto">
+          <div className="d-flex align-items-center gap-3 ms-auto">
             <button 
-              className="btn btn-sm text-white border-0 d-flex align-items-center gap-1.5 rounded-pill px-2.5 py-1"
-              style={{ backgroundColor: 'rgba(255,255,255,0.22)', fontSize: '0.8rem', fontWeight: 'bold' }}
+              className="btn btn-sm text-white border-0 d-flex align-items-center gap-2 rounded-2 px-3 py-1.5"
+              style={{ backgroundColor: 'rgba(255,255,255,0.22)', fontSize: '0.85rem', fontWeight: 'bold' }}
               onClick={() => setShowNotificationModal(true)}
               title="Xem Thông báo & Ghi chú từ Cán bộ / Admin"
             >
-              📁 Hồ sơ 
-              <span className="badge bg-danger rounded-circle p-1 d-inline-flex align-items-center justify-content-center" style={{ minWidth: '18px', height: '18px', fontSize: '0.65rem' }}>
+              <span>📁</span>
+              <span>Hồ sơ</span>
+              <span className="badge bg-danger rounded-circle p-1 ms-1 d-inline-flex align-items-center justify-content-center" style={{ minWidth: '20px', height: '20px', fontSize: '0.7rem' }}>
                 {unreadNotifCount > 0 ? unreadNotifCount : apps.length}
               </span>
             </button>
 
             {/* User Dropdown Profile */}
             <div className="dropdown">
-              <button className="btn btn-sm text-white dropdown-toggle border-0 fw-semibold d-flex align-items-center gap-1.5 p-1" type="button" data-bs-toggle="dropdown" aria-expanded="false" style={{ fontSize: '0.82rem' }}>
-                <span className="rounded-circle bg-warning text-dark d-inline-flex justify-content-center align-items-center fw-bold" style={{ width: '26px', height: '26px', fontSize: '0.75rem' }}>
+              <button className="btn btn-sm text-white dropdown-toggle border-0 fw-semibold d-flex align-items-center gap-2.5 px-2.5 py-1.5" type="button" data-bs-toggle="dropdown" aria-expanded="false" style={{ fontSize: '0.85rem' }}>
+                <span className="rounded-circle bg-warning text-dark d-inline-flex justify-content-center align-items-center fw-bold me-1" style={{ width: '28px', height: '28px', fontSize: '0.8rem' }}>
                   👤
                 </span>
                 <span className="d-none d-sm-inline">{session?.fullName || 'Khách hàng'}</span>
@@ -823,7 +951,7 @@ export default function PortalClient({ session, initialApplications }) {
               </ul>
             </div>
 
-            <button className="btn btn-danger btn-sm rounded-pill px-2.5 py-0.5 fw-bold fs-8" onClick={handleLogout}>
+            <button className="btn btn-danger btn-sm rounded-2 px-3 py-1.5 fw-bold fs-8" onClick={handleLogout}>
               Thoát
             </button>
           </div>
@@ -888,97 +1016,19 @@ export default function PortalClient({ session, initialApplications }) {
               </div>
             </div>
             <div className="d-flex align-items-center gap-2">
-              <span className="badge bg-danger px-3 py-2 fs-7 rounded-pill fw-bold">⌛ Còn 24 ngày 18 giờ</span>
-              {ekycDone || activeApp.ekycStatus === 'verified' ? (
-                <span className="badge bg-success text-white px-3 py-2 fs-7 rounded-pill fw-bold">✓ eKYC Verified</span>
-              ) : (
-                <button className="btn btn-sm btn-outline-success rounded-pill px-3 py-1 fw-bold fs-8" onClick={handleStartEkyc}>
-                  🔍 Xác thực eKYC ngay
-                </button>
-              )}
+              <span className="badge bg-danger px-3 py-2 fs-7 rounded-2 fw-bold">⌛ Còn 24 ngày 18 giờ</span>
             </div>
           </div>
         )}
 
-        {/* SINGLE PRIMARY APPLICATION STATUS NOTIFICATION BANNER */}
-        {activeApp && (
-          <div className={`card border-0 shadow-sm rounded-3 mb-3 p-3.5 ${
-            activeApp.status === 'approved' ? 'bg-success bg-opacity-10 border-start border-5 border-success text-success-emphasis' :
-            activeApp.status === 'rejected_wrong_k' ? 'bg-danger bg-opacity-10 border-start border-5 border-danger text-danger-emphasis' :
-            activeApp.status === 'returned_for_supplement' ? 'bg-warning bg-opacity-10 border-start border-5 border-warning text-warning-emphasis' :
-            activeApp.status === 'to_kiem_soat' ? 'bg-purple bg-opacity-10 border-start border-5 border-purple' : 'bg-primary bg-opacity-10 border-start border-5 border-primary'
-          }`}>
-            <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
-              <div>
-                <div className="d-flex align-items-center gap-2 mb-1 flex-wrap">
-                  <span className="fw-bold fs-7 text-dark">📢 TÌNH TRẠNG HỒ SƠ HIỆN TẠI:</span>
-                  <span className={`badge rounded-pill px-3 py-1.5 fs-7 fw-bold ${
-                    activeApp.status === 'approved' ? 'bg-success text-white' :
-                    activeApp.status === 'rejected_wrong_k' ? 'bg-danger text-white' :
-                    activeApp.status === 'returned_for_supplement' ? 'bg-warning text-dark' :
-                    activeApp.status === 'to_kiem_soat' ? 'bg-purple text-white' :
-                    activeApp.status === 'bo_sung_ban_goc' ? 'bg-primary text-white' : 'bg-info text-dark'
-                  }`}>
-                    {activeApp.status === 'approved' ? '🟢 4. Đã duyệt - Đủ điều kiện vào bốc thăm' :
-                     activeApp.status === 'rejected_wrong_k' ? '🔴 1. Bị từ chối do chọn sai nhóm K' :
-                     activeApp.status === 'returned_for_supplement' ? '🟡 1. Trả về yêu cầu bổ sung Mẫu 02' :
-                     activeApp.status === 'to_kiem_soat' ? '🟣 2. Đang thẩm định tại Tổ Kiểm Soát (GĐ 2)' :
-                     activeApp.status === 'bo_sung_ban_goc' ? '🟠 3. Đã duyệt sơ bộ - Hẹn mang bản gốc (GĐ 3)' : '🔵 1. Mới nộp - Đang chờ Tổ Tiếp Nhận (GĐ 1)'}
-                  </span>
-                  <span className="badge bg-light text-dark border font-monospace fs-8">Mã HS: #{activeApp.id}</span>
-                </div>
-
-                <div className="mt-2 text-dark fs-8">
-                  💬 <strong>Ghi chú từ Cán bộ / Admin:</strong>{' '}
-                  <span className="fst-italic text-secondary">
-                    "{activeApp.notes || 'Hồ sơ của bạn đã được ghi nhận vào hệ thống và đang trong quá trình xử lý.'}"
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex-shrink-0">
-                {activeApp.status === 'rejected_wrong_k' && (
-                  <button className="btn btn-danger rounded-pill px-3.5 py-1.5 fw-bold fs-8 shadow-sm" onClick={() => { setViewMode('edit'); setCurrentFormStep(1); }}>
-                    🔄 Nộp lại từ đầu (Chọn lại K)
-                  </button>
-                )}
-
-                {activeApp.status === 'returned_for_supplement' && (
-                  <button className="btn btn-warning text-dark rounded-pill px-3.5 py-1.5 fw-bold fs-8 shadow-sm" onClick={() => { setViewMode('edit'); setCurrentFormStep(4); }}>
-                    📤 Tải lên bổ sung Mẫu 02
-                  </button>
-                )}
-
-                {activeApp.status === 'approved' && (
-                  <a href="/QuyCheBocTham" className="btn btn-success text-white rounded-pill px-3.5 py-1.5 fw-bold fs-8 shadow-sm">
-                    🎲 Đến trang Bốc thăm ngay
-                  </a>
-                )}
-
-                {(activeApp.status !== 'rejected_wrong_k' && activeApp.status !== 'returned_for_supplement' && activeApp.status !== 'approved') && (
-                  <button className="btn btn-outline-secondary rounded-pill px-3.5 py-1.5 fw-semibold fs-8" onClick={() => setViewMode('view')}>
-                    👁️ Xem hồ sơ đã nộp
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {message.text && (
-          <div className={`alert alert-${message.type || 'info'} alert-dismissible fade show border-0 shadow-sm mb-3 rounded-3 fs-7 py-2.5`} role="alert">
-            {message.text}
-            <button type="button" className="btn-close" onClick={() => setMessage({ text: '', type: '' })}></button>
-          </div>
-        )}
 
         {/* 3. STEPPER PROGRESS (COMPACT 4 STAGES GRID - MOBILE OPTIMIZED) */}
         <div className="row row-cols-2 row-cols-md-4 g-2 mb-3">
           <div className="col">
             <div className={`p-2 p-md-3 rounded-3 bg-white border h-100 ${currentFormStep <= 3 ? 'border-2 border-success shadow-sm' : ''}`} style={{ borderColor: '#0b6640' }}>
-              <div className="d-flex align-items-center gap-1.5">
-                <span className="badge rounded-circle bg-success text-white d-flex align-items-center justify-content-center p-1" style={{ width: '22px', height: '22px', fontSize: '0.75rem' }}>1</span>
-                <span className="text-muted fs-8 fw-semibold">Giai đoạn 1</span>
+              <div className="d-flex align-items-center gap-2.5">
+                <span className="badge rounded-circle bg-success text-white d-flex align-items-center justify-content-center p-1 flex-shrink-0" style={{ width: '24px', height: '24px', fontSize: '0.8rem' }}>1</span>
+                <span className="text-muted fs-8 fw-semibold ms-1">Giai đoạn 1</span>
               </div>
               <div className="fw-bold text-dark mt-1 fs-7">Nộp hồ sơ</div>
             </div>
@@ -986,9 +1036,9 @@ export default function PortalClient({ session, initialApplications }) {
 
           <div className="col">
             <div className={`p-2 p-md-3 rounded-3 bg-white border h-100 ${currentFormStep === 4 ? 'border-2 border-success shadow-sm' : 'opacity-75'}`}>
-              <div className="d-flex align-items-center gap-1.5">
-                <span className="badge rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center p-1" style={{ width: '22px', height: '22px', fontSize: '0.75rem' }}>2</span>
-                <span className="text-muted fs-8 fw-semibold">Giai đoạn 2</span>
+              <div className="d-flex align-items-center gap-2.5">
+                <span className="badge rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center p-1 flex-shrink-0" style={{ width: '24px', height: '24px', fontSize: '0.8rem' }}>2</span>
+                <span className="text-muted fs-8 fw-semibold ms-1">Giai đoạn 2</span>
               </div>
               <div className="fw-semibold text-secondary mt-1 fs-7">Thẩm duyệt bản mềm</div>
             </div>
@@ -996,9 +1046,9 @@ export default function PortalClient({ session, initialApplications }) {
 
           <div className="col">
             <div className={`p-2 p-md-3 rounded-3 bg-white border h-100 ${currentFormStep === 5 ? 'border-2 border-success shadow-sm' : 'opacity-75'}`}>
-              <div className="d-flex align-items-center gap-1.5">
-                <span className="badge rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center p-1" style={{ width: '22px', height: '22px', fontSize: '0.75rem' }}>3</span>
-                <span className="text-muted fs-8 fw-semibold">Giai đoạn 3</span>
+              <div className="d-flex align-items-center gap-2.5">
+                <span className="badge rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center p-1 flex-shrink-0" style={{ width: '24px', height: '24px', fontSize: '0.8rem' }}>3</span>
+                <span className="text-muted fs-8 fw-semibold ms-1">Giai đoạn 3</span>
               </div>
               <div className="fw-semibold text-secondary mt-1 fs-7">Thẩm duyệt bản cứng</div>
             </div>
@@ -1006,9 +1056,9 @@ export default function PortalClient({ session, initialApplications }) {
 
           <div className="col">
             <div className={`p-2 p-md-3 rounded-3 bg-white border h-100 ${currentFormStep === 6 ? 'border-2 border-success shadow-sm' : 'opacity-75'}`}>
-              <div className="d-flex align-items-center gap-1.5">
-                <span className="badge rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center p-1" style={{ width: '22px', height: '22px', fontSize: '0.75rem' }}>4</span>
-                <span className="text-muted fs-8 fw-semibold">Giai đoạn 4</span>
+              <div className="d-flex align-items-center gap-2.5">
+                <span className="badge rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center p-1 flex-shrink-0" style={{ width: '24px', height: '24px', fontSize: '0.8rem' }}>4</span>
+                <span className="text-muted fs-8 fw-semibold ms-1">Giai đoạn 4</span>
               </div>
               <div className="fw-semibold text-secondary mt-1 fs-7">Thẩm duyệt suất mua</div>
             </div>
@@ -1029,7 +1079,7 @@ export default function PortalClient({ session, initialApplications }) {
               <button 
                 key={s.step}
                 type="button"
-                className={`btn btn-sm rounded-pill text-nowrap px-3 py-1 fs-8 border ${currentFormStep === s.step ? 'btn-success fw-bold shadow-sm' : 'btn-light text-dark'}`}
+                className={`btn btn-sm rounded-2 text-nowrap px-3 py-1 fs-8 border ${currentFormStep === s.step ? 'btn-success fw-bold shadow-sm' : 'btn-light text-dark'}`}
                 style={{ backgroundColor: currentFormStep === s.step ? '#0b6640' : '#ffffff', borderColor: currentFormStep === s.step ? '#0b6640' : '#cbd5e1' }}
                 onClick={() => setCurrentFormStep(s.step)}
               >
@@ -1158,7 +1208,7 @@ export default function PortalClient({ session, initialApplications }) {
                   onClick={() => { setViewMode('edit'); setCurrentFormStep(5); }}
                 >
                   <span>5. Đối Chứng Bản Cứng</span>
-                  {currentFormStep > 5 ? <span className="text-success fw-bold">✓</span> : (currentFormStep === 5 ? <span>👉</span> : <span>🔒</span>)}
+                  {currentFormStep > 5 ? <span className="text-success fw-bold">✓</span> : (currentFormStep === 5 ? <span>👉</span> : <span className="text-muted fs-8">📄</span>)}
                 </button>
 
                 {/* STEP 6 MENU BUTTON */}
@@ -1169,7 +1219,7 @@ export default function PortalClient({ session, initialApplications }) {
                   onClick={() => { setViewMode('edit'); setCurrentFormStep(6); }}
                 >
                   <span>6. Thẩm Duyệt Liên Sở</span>
-                  {currentFormStep === 6 ? <span>👉</span> : <span>🔒</span>}
+                  {currentFormStep === 6 ? <span>👉</span> : <span className="text-muted fs-8">🏆</span>}
                 </button>
               </div>
             </div>
@@ -1216,7 +1266,7 @@ export default function PortalClient({ session, initialApplications }) {
                           <strong className="fs-6 text-dark fw-bold">
                             {app.id && app.id !== 'Chưa cấp' ? `Hồ sơ #${app.id}` : 'Hồ sơ nháp – chưa cấp mã'}
                           </strong>
-                          <span className="badge rounded-pill text-white px-2.5 py-1 fs-8 fw-semibold" style={{ backgroundColor: '#64748b' }}>
+                          <span className="badge rounded-2 text-white px-2.5 py-1 fs-8 fw-semibold" style={{ backgroundColor: '#64748b' }}>
                             {app.status === 'approved' ? '✓ Đã duyệt hồ sơ' :
                              app.status === 'rejected' ? '❌ Cần bổ sung' :
                              app.status === 'reviewing' ? '⏳ Đang thẩm duyệt' : 'Chờ gửi hồ sơ'}
@@ -1251,7 +1301,7 @@ export default function PortalClient({ session, initialApplications }) {
                     </h5>
                     <p className="text-muted small mb-0">Mã hồ sơ: <strong>{activeApp.id}</strong> | Ngày nộp: {new Date(activeApp.createdAt).toLocaleDateString('vi-VN')}</p>
                   </div>
-                  <button className="btn btn-emerald btn-sm rounded-pill px-3 fw-bold" onClick={() => { setViewMode('edit'); setCurrentFormStep(1); }}>
+                  <button className="btn btn-emerald btn-sm rounded-2 px-3 fw-bold" onClick={() => { setViewMode('edit'); setCurrentFormStep(1); }}>
                     ✏️ Cập Nhật Hồ Sơ
                   </button>
                 </div>
@@ -1336,7 +1386,7 @@ export default function PortalClient({ session, initialApplications }) {
                             <td>
                               {fileObj ? (
                                 <button 
-                                  className="btn btn-sm btn-outline-success rounded-pill px-2 py-0.5 fs-8"
+                                  className="btn btn-sm btn-outline-success rounded-2 px-2 py-0.5 fs-8"
                                   onClick={() => setPreviewModalDoc(fileObj)}
                                 >
                                   👁 Xem
@@ -1364,74 +1414,135 @@ export default function PortalClient({ session, initialApplications }) {
                       <h6 className="fw-bold mb-0 text-success fs-6" style={{ color: '#0b6640' }}>
                         Bước 1/6 — Kênh Biết Đến Thông Tin
                       </h6>
-                      <span className="badge bg-success-subtle text-success px-2.5 py-1 rounded-pill fs-8">Kê khai bước 1</span>
+                      <span className="badge bg-success-subtle text-success px-2.5 py-1 rounded-2 fs-8">Kê khai bước 1</span>
                     </div>
 
-                    <div className="mb-3">
-                      <label className="form-label fw-bold text-dark fs-7 mb-2">
+                    <div className="mb-4">
+                      <label className="form-label fw-bold text-dark fs-7 mb-2.5">
                         1. Bạn biết đến thông tin dự án Nhà Ở Xã Hội Marina Living qua kênh nào dưới đây? <span className="text-danger">*</span>
                       </label>
 
-                      <div className="row g-2">
-                        {infoChannelsList.map((ch) => (
-                          <div className="col-12 col-md-6" key={ch.id}>
-                            <div 
-                              className={`p-2.5 rounded-3 border cursor-pointer h-100 transition-all ${infoChannel === ch.id ? 'border-2 border-success bg-success bg-opacity-10' : 'bg-light'}`}
-                              style={{ borderColor: infoChannel === ch.id ? '#0b6640' : '#e5e7eb' }}
-                              onClick={() => setInfoChannel(ch.id)}
-                            >
-                              <div className="form-check">
-                                <input 
-                                  className="form-check-input mt-1" 
-                                  type="radio" 
-                                  name="infoChannelRadio"
-                                  id={`ch-${ch.id}`}
-                                  checked={infoChannel === ch.id}
-                                  onChange={() => setInfoChannel(ch.id)}
-                                />
-                                <label className="form-check-label ms-1.5 cursor-pointer" htmlFor={`ch-${ch.id}`}>
-                                  <div className="fw-bold text-dark fs-7">{ch.icon} {ch.name}</div>
-                                  <div className="text-muted fs-8 mt-0.5">{ch.desc}</div>
-                                </label>
+                      <div className="row g-3">
+                        {infoChannelsList.map((ch) => {
+                          const isSelected = infoChannel === ch.id;
+                          return (
+                            <div className="col-12 col-md-6" key={ch.id}>
+                              <div 
+                                className="p-3 rounded-3 border cursor-pointer h-100 transition-all d-flex align-items-start gap-3"
+                                style={{ 
+                                  backgroundColor: isSelected ? '#f0fdf4' : '#ffffff',
+                                  borderColor: isSelected ? '#0b6640' : '#e2e8f0',
+                                  borderWidth: isSelected ? '2px' : '1px',
+                                  boxShadow: isSelected ? '0 4px 12px rgba(11,102,64,0.08)' : '0 1px 3px rgba(0,0,0,0.02)'
+                                }}
+                                onClick={() => setInfoChannel(ch.id)}
+                              >
+                                {/* Custom Smooth Radio Indicator */}
+                                <div 
+                                  className="d-flex align-items-center justify-content-center flex-shrink-0 mt-0.5 rounded-circle transition-all"
+                                  style={{
+                                    width: '20px',
+                                    height: '20px',
+                                    border: isSelected ? '2px solid #0b6640' : '2px solid #cbd5e1',
+                                    backgroundColor: '#ffffff'
+                                  }}
+                                >
+                                  {isSelected && (
+                                    <div 
+                                      className="rounded-circle"
+                                      style={{ width: '10px', height: '10px', backgroundColor: '#0b6640' }}
+                                    />
+                                  )}
+                                </div>
+
+                                <div className="flex-grow-1">
+                                  <div className="fw-bold text-dark fs-7 d-flex align-items-start gap-2">
+                                    <span className="flex-shrink-0 fs-6">{ch.icon}</span>
+                                    <span className="flex-grow-1">{ch.name}</span>
+                                  </div>
+                                  <div className="text-secondary fs-8 mt-1 lh-sm">{ch.desc}</div>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
 
-                    <div className="mb-3 pt-3 border-top">
-                      <label className="form-label fw-bold text-dark fs-7 mb-2">
+                    <div className="mb-4 pt-3 border-top">
+                      <label className="form-label fw-bold text-dark fs-7 mb-2.5">
                         2. Bạn có nhu cầu tư vấn thêm về gói vay vốn lãi suất ưu đãi mua NOXH không?
                       </label>
 
-                      <div className="d-flex flex-column flex-sm-row gap-3">
-                        <div className="form-check">
-                          <input 
-                            className="form-check-input" 
-                            type="radio" 
-                            name="loanConsult" 
-                            id="loanYes" 
-                            checked={needLoanConsult === 'yes'}
-                            onChange={() => setNeedLoanConsult('yes')}
-                          />
-                          <label className="form-check-label fw-semibold text-dark fs-7 cursor-pointer" htmlFor="loanYes">
-                            Có, tôi muốn được cán bộ ngân hàng tư vấn gói vay lãi suất ưu đãi
-                          </label>
+                      <div className="row g-3">
+                        {/* Option Yes */}
+                        <div className="col-12 col-md-6">
+                          <div 
+                            className="p-3 rounded-3 border cursor-pointer h-100 transition-all d-flex align-items-start gap-3"
+                            style={{ 
+                              backgroundColor: needLoanConsult === 'yes' ? '#f0fdf4' : '#ffffff',
+                              borderColor: needLoanConsult === 'yes' ? '#0b6640' : '#e2e8f0',
+                              borderWidth: needLoanConsult === 'yes' ? '2px' : '1px',
+                              boxShadow: needLoanConsult === 'yes' ? '0 4px 12px rgba(11,102,64,0.08)' : '0 1px 3px rgba(0,0,0,0.02)'
+                            }}
+                            onClick={() => setNeedLoanConsult('yes')}
+                          >
+                            <div 
+                              className="d-flex align-items-center justify-content-center flex-shrink-0 mt-0.5 rounded-circle transition-all"
+                              style={{
+                                width: '20px',
+                                height: '20px',
+                                border: needLoanConsult === 'yes' ? '2px solid #0b6640' : '2px solid #cbd5e1',
+                                backgroundColor: '#ffffff'
+                              }}
+                            >
+                              {needLoanConsult === 'yes' && (
+                                <div 
+                                  className="rounded-circle"
+                                  style={{ width: '10px', height: '10px', backgroundColor: '#0b6640' }}
+                                />
+                              )}
+                            </div>
+                            <div>
+                              <div className="fw-bold text-dark fs-7">💡 Có, tôi muốn được cán bộ tư vấn gói vay</div>
+                              <div className="text-secondary fs-8 mt-1 lh-sm">Hỗ trợ kết nối ngân hàng chính sách / thương mại có lãi suất ưu đãi</div>
+                            </div>
+                          </div>
                         </div>
 
-                        <div className="form-check">
-                          <input 
-                            className="form-check-input" 
-                            type="radio" 
-                            name="loanConsult" 
-                            id="loanNo"
-                            checked={needLoanConsult === 'no'}
-                            onChange={() => setNeedLoanConsult('no')}
-                          />
-                          <label className="form-check-label fw-semibold text-dark fs-7 cursor-pointer" htmlFor="loanNo">
-                            Không, tôi đã chuẩn bị sẵn nguồn tài chính
-                          </label>
+                        {/* Option No */}
+                        <div className="col-12 col-md-6">
+                          <div 
+                            className="p-3 rounded-3 border cursor-pointer h-100 transition-all d-flex align-items-start gap-3"
+                            style={{ 
+                              backgroundColor: needLoanConsult === 'no' ? '#f0fdf4' : '#ffffff',
+                              borderColor: needLoanConsult === 'no' ? '#0b6640' : '#e2e8f0',
+                              borderWidth: needLoanConsult === 'no' ? '2px' : '1px',
+                              boxShadow: needLoanConsult === 'no' ? '0 4px 12px rgba(11,102,64,0.08)' : '0 1px 3px rgba(0,0,0,0.02)'
+                            }}
+                            onClick={() => setNeedLoanConsult('no')}
+                          >
+                            <div 
+                              className="d-flex align-items-center justify-content-center flex-shrink-0 mt-0.5 rounded-circle transition-all"
+                              style={{
+                                width: '20px',
+                                height: '20px',
+                                border: needLoanConsult === 'no' ? '2px solid #0b6640' : '2px solid #cbd5e1',
+                                backgroundColor: '#ffffff'
+                              }}
+                            >
+                              {needLoanConsult === 'no' && (
+                                <div 
+                                  className="rounded-circle"
+                                  style={{ width: '10px', height: '10px', backgroundColor: '#0b6640' }}
+                                />
+                              )}
+                            </div>
+                            <div>
+                              <div className="fw-bold text-dark fs-7">💳 Không, tôi đã chuẩn bị sẵn tài chính</div>
+                              <div className="text-secondary fs-8 mt-1 lh-sm">Tự chủ nguồn vốn mua nhà, không cần hỗ trợ làm hồ sơ vay vốn</div>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1439,7 +1550,7 @@ export default function PortalClient({ session, initialApplications }) {
                     <div className="d-flex justify-content-end pt-3 border-top">
                       <button 
                         type="button" 
-                        className="btn btn-emerald rounded-pill px-4 py-2 fw-bold fs-7 shadow-sm w-100 w-sm-auto"
+                        className="btn btn-emerald rounded-2 px-4 py-2 fw-bold fs-7 shadow-sm w-100 w-sm-auto"
                         style={{ backgroundColor: '#0b6640', borderColor: '#0b6640' }}
                         onClick={() => setCurrentFormStep(2)}
                       >
@@ -1558,7 +1669,22 @@ export default function PortalClient({ session, initialApplications }) {
                         type="button" 
                         className="btn text-white rounded-3 px-4 py-2 fw-semibold fs-7 border-0"
                         style={{ backgroundColor: '#0b6640' }}
-                        onClick={() => setCurrentFormStep(3)}
+                        onClick={async () => {
+                          try {
+                            const fd = new FormData();
+                            if (activeApp?.id) fd.append('appId', activeApp.id);
+                            fd.append('infoChannel', infoChannel);
+                            fd.append('needLoanConsult', needLoanConsult);
+                            fd.append('targetObject', targetObject);
+                            fd.append('targetObjectDetail', targetObjectDetail);
+                            fd.append('maritalStatus', maritalStatus);
+                            fd.append('unitType', unitType);
+                            fd.append('preferredFloor', preferredFloor);
+                            await fetch('/api/applications', { method: 'POST', body: fd });
+                            reloadApplications();
+                          } catch (e) {}
+                          setCurrentFormStep(3);
+                        }}
                       >
                         Tiếp tục →
                       </button>
@@ -1573,7 +1699,9 @@ export default function PortalClient({ session, initialApplications }) {
                       <h6 className="fw-bold mb-0 text-success fs-6" style={{ color: '#0b6640' }}>
                         Bước 3/6 — Nộp hồ sơ
                       </h6>
-                      <span className="text-muted fs-8">Mục có dấu <span className="text-danger">*</span> là bắt buộc.</span>
+                      <span className="badge bg-danger text-white px-2.5 py-1 rounded-2 fs-8 fw-semibold">
+                        Mục có dấu * là BẮT BUỘC
+                      </span>
                     </div>
 
                     <form onSubmit={handleSubmit}>
@@ -1584,7 +1712,7 @@ export default function PortalClient({ session, initialApplications }) {
                           <span className="fs-7">🪪 Tải Lên Thẻ CCCD Loại Mới (2 Mặt)</span>
                           <button 
                             type="button" 
-                            className="btn btn-sm rounded-pill px-2.5 py-0.5 text-decoration-none d-inline-flex align-items-center gap-1 border shadow-sm cursor-pointer"
+                            className="btn btn-sm rounded-2 px-2.5 py-0.5 text-decoration-none d-inline-flex align-items-center gap-1 border shadow-sm cursor-pointer"
                             style={{ backgroundColor: '#e0f7ff', color: '#0284c7', borderColor: '#b3f0ff', fontSize: '0.78rem', fontWeight: '500' }}
                             onClick={() => setHandbookModal({
                               title: 'Bản sao y công chứng CCCD của Chủ hộ, tất cả các thành viên trong gia đình',
@@ -1598,44 +1726,8 @@ export default function PortalClient({ session, initialApplications }) {
 
                         <div className="card-body p-3">
                           
-                          {/* BẢNG KẾT QUẢ TRÍCH XUẤT QR (NẾU CÓ) */}
-                          {qrParsedData && (
-                            <div className="mt-1 mb-3 pt-2 pb-2 border-top border-success border-opacity-25">
-                              <div className="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-1">
-                                <span className="badge bg-success text-white px-2.5 py-1 rounded-pill fw-semibold fs-8">
-                                  ✅ Đã giải mã &amp; trích xuất dữ liệu thành công từ Mã QR CCCD
-                                </span>
-                                <span className="text-muted fs-8">Thời gian: {qrParsedData.scannedAt}</span>
-                              </div>
 
-                              <div className="row g-2 text-dark fs-8 bg-white p-2.5 rounded border">
-                                <div className="col-12 col-sm-6 col-md-4">
-                                  <span className="text-muted d-block fs-8">1. Số CCCD (12 số):</span>
-                                  <strong className="text-success fs-7">{cccdNumber || qrParsedData.cccdNumber}</strong>
-                                </div>
-                                <div className="col-12 col-sm-6 col-md-4">
-                                  <span className="text-muted d-block fs-8">2. Họ và tên:</span>
-                                  <strong className="text-uppercase text-dark">{fullName || qrParsedData.fullName}</strong>
-                                </div>
-                                <div className="col-12 col-sm-6 col-md-4">
-                                  <span className="text-muted d-block fs-8">3. Ngày sinh:</span>
-                                  <strong>{dob || qrParsedData.dob}</strong>
-                                </div>
-                                <div className="col-12 col-sm-6 col-md-4">
-                                  <span className="text-muted d-block fs-8">4. Giới tính:</span>
-                                  <strong>{gender || qrParsedData.gender}</strong>
-                                </div>
-                                <div className="col-12 col-sm-6 col-md-4">
-                                  <span className="text-muted d-block fs-8">5. Ngày cấp thẻ:</span>
-                                  <strong>{issueDate || qrParsedData.issueDate}</strong>
-                                </div>
-                                <div className="col-12">
-                                  <span className="text-muted d-block fs-8">6. Nơi đăng ký thường trú:</span>
-                                  <strong>{address || qrParsedData.address}</strong>
-                                </div>
-                              </div>
-                            </div>
-                          )}
+
 
                           {/* UPLOAD 2 MẶT CCCD LOẠI MỚI */}
                           <div className="row g-3">
@@ -1667,7 +1759,7 @@ export default function PortalClient({ session, initialApplications }) {
                                 </div>
 
                                 <div className="mt-2 text-center">
-                                  <label className="btn btn-emerald btn-sm rounded-pill px-3 py-2 fw-bold fs-7 cursor-pointer mb-0 w-100 shadow-sm text-white d-flex align-items-center justify-content-center gap-1.5" style={{ backgroundColor: '#0b6640', borderColor: '#0b6640', color: '#ffffff' }}>
+                                  <label className="btn btn-emerald btn-sm rounded-2 px-3 py-2 fw-bold fs-7 cursor-pointer mb-0 w-100 shadow-sm text-white d-flex align-items-center justify-content-center gap-1.5" style={{ backgroundColor: '#0b6640', borderColor: '#0b6640', color: '#ffffff' }}>
                                     <span>📷</span> {cccdFrontPreview ? 'Tải lại ảnh Mặt trước' : '+ Tải lên Mặt trước'}
                                     <input type="file" accept="image/*" className="d-none" onChange={handleCccdFrontChange} />
                                   </label>
@@ -1702,7 +1794,7 @@ export default function PortalClient({ session, initialApplications }) {
                                 </div>
 
                                 <div className="mt-2 text-center">
-                                  <label className="btn btn-emerald btn-sm rounded-pill px-3 py-2 fw-bold fs-7 cursor-pointer mb-0 w-100 shadow-sm text-white d-flex align-items-center justify-content-center gap-1.5" style={{ backgroundColor: '#0b6640', borderColor: '#0b6640', color: '#ffffff' }}>
+                                  <label className="btn btn-emerald btn-sm rounded-2 px-3 py-2 fw-bold fs-7 cursor-pointer mb-0 w-100 shadow-sm text-white d-flex align-items-center justify-content-center gap-1.5" style={{ backgroundColor: '#0b6640', borderColor: '#0b6640', color: '#ffffff' }}>
                                     <span>📷</span> {cccdBackPreview ? 'Tải lại ảnh Mặt sau' : '+ Tải lên Mặt sau (Quét QR)'}
                                     <input type="file" accept="image/*" className="d-none" onChange={handleCccdBackChange} />
                                   </label>
@@ -1769,9 +1861,11 @@ export default function PortalClient({ session, initialApplications }) {
 
                       {/* DOCUMENT UPLOAD TABLE (DESKTOP & TOUCH CARDS ON MOBILE) */}
                       <div className="mb-3">
-                        <p className="fw-semibold text-secondary fs-8 mb-2">
-                          Danh mục hồ sơ tương ứng nhóm đối tượng <strong>{targetObject}</strong>. Mục có dấu <span className="text-danger">*</span> là bắt buộc.
-                        </p>
+                        <div className="alert alert-danger bg-danger-subtle border-start border-4 border-danger p-2.5 mb-3 rounded-2 shadow-2sm">
+                          <span className="fw-semibold text-danger fs-8">
+                            📌 Danh mục hồ sơ tương ứng nhóm đối tượng <strong className="text-danger fw-bold">{targetObject}</strong>. Các mục có dấu <span className="badge bg-danger text-white px-1.5 py-0.5 rounded">* BẮT BUỘC</span> không được bỏ trống.
+                          </span>
+                        </div>
 
                         <div className="table-responsive">
                           <table className="table align-middle border rounded">
@@ -1792,11 +1886,11 @@ export default function PortalClient({ session, initialApplications }) {
                                       <div className="fw-bold text-dark fs-7 mb-1">
                                         {doc.title} {doc.required && <span className="text-danger">*</span>}
                                       </div>
-                                      <div className="d-flex gap-1.5 flex-wrap mt-1">
+                                      <div className="d-flex flex-wrap gap-2 mt-2.5">
                                         {doc.handbooks?.map((hb, idx) => (
                                           <button 
+                                            key={`hb-${idx}`}
                                             type="button"
-                                            key={idx}
                                             onClick={(e) => {
                                               e.preventDefault();
                                               setHandbookModal({
@@ -1806,23 +1900,23 @@ export default function PortalClient({ session, initialApplications }) {
                                                 docxUrl: hb.docxUrl
                                               });
                                             }} 
-                                            className="btn btn-sm rounded-pill px-2.5 py-0.5 text-decoration-none d-inline-flex align-items-center gap-1 border shadow-sm cursor-pointer"
-                                            style={{ backgroundColor: '#e0f7ff', color: '#0284c7', borderColor: '#b3f0ff', fontSize: '0.78rem', fontWeight: '500' }}
+                                            className="btn btn-sm rounded-2 px-3 py-1.5 text-decoration-none d-inline-flex align-items-center gap-1.5 border-0 cursor-pointer shadow-sm text-white fw-semibold"
+                                            style={{ backgroundColor: '#0284c7', fontSize: '0.78rem', lineHeight: '1.4' }}
                                           >
-                                            {hb.label}
+                                            📖 {hb.label.replace('📖 ', '')}
                                           </button>
                                         ))}
                                         {doc.templates?.map((tmpl, idx) => (
                                           <a 
-                                            key={idx}
+                                            key={`tmpl-${idx}`}
                                             href={tmpl.url} 
                                             target="_blank" 
                                             rel="noopener noreferrer"
                                             download
-                                            className="btn btn-sm rounded-pill px-2.5 py-0.5 text-decoration-none d-inline-flex align-items-center gap-1 border shadow-sm cursor-pointer"
-                                            style={{ backgroundColor: '#f0fdf4', color: '#15803d', borderColor: '#bbf7d0', fontSize: '0.78rem', fontWeight: '500' }}
+                                            className="btn btn-sm rounded-2 px-3 py-1.5 text-decoration-none d-inline-flex align-items-center gap-1.5 border-0 cursor-pointer shadow-sm text-white fw-semibold"
+                                            style={{ backgroundColor: '#15803d', fontSize: '0.78rem', lineHeight: '1.4' }}
                                           >
-                                            {tmpl.label}
+                                            📥 {tmpl.label.replace('📥 ', '')}
                                           </a>
                                         ))}
                                       </div>
@@ -1831,14 +1925,19 @@ export default function PortalClient({ session, initialApplications }) {
                                     <td>
                                       {fileObj ? (
                                         <div className="d-inline-flex align-items-center gap-1.5 bg-light border rounded px-2 py-1 fs-8">
-                                          <span>📄</span>
-                                          <span className="text-truncate" style={{ maxWidth: '120px' }} title={fileObj.name}>
-                                            {fileObj.name}
-                                          </span>
                                           <button 
                                             type="button"
-                                            className="btn btn-link btn-sm p-0 text-dark ms-1" 
-                                            title="Xem"
+                                            className="btn btn-link btn-sm p-0 text-dark text-decoration-none text-truncate ms-1 fw-medium" 
+                                            style={{ maxWidth: '140px' }}
+                                            title="Bấm để xem ảnh"
+                                            onClick={() => setPreviewModalDoc(fileObj)}
+                                          >
+                                            {fileObj.name}
+                                          </button>
+                                          <button 
+                                            type="button"
+                                            className="btn btn-link btn-sm p-0 text-primary ms-1 text-decoration-none" 
+                                            title="Xem ảnh"
                                             onClick={() => setPreviewModalDoc(fileObj)}
                                           >
                                             👁
@@ -1859,22 +1958,22 @@ export default function PortalClient({ session, initialApplications }) {
 
                                     <td>
                                       {fileObj ? (
-                                        <span className="badge bg-success px-2 py-1 rounded-pill fs-8 fw-semibold" style={{ backgroundColor: '#0b6640' }}>
+                                        <span className="badge bg-success px-2 py-1 rounded-2 fs-8 fw-semibold" style={{ backgroundColor: '#0b6640' }}>
                                           ✓ Đã upload
                                         </span>
                                       ) : (
-                                        <span className="badge bg-secondary-subtle text-secondary px-2 py-1 rounded-pill fs-8">
+                                        <span className="badge bg-secondary-subtle text-secondary px-2 py-1 rounded-2 fs-8">
                                           Chưa upload
                                         </span>
                                       )}
                                     </td>
 
                                     <td>
-                                      <label className="btn btn-emerald btn-sm rounded-pill px-3 py-1 fs-8 fw-bold cursor-pointer mb-0 text-white" style={{ backgroundColor: '#0b6640', borderColor: '#0b6640', color: '#ffffff' }}>
+                                      <label className="btn btn-emerald btn-sm rounded-2 px-3 py-1.5 fs-8 fw-bold cursor-pointer mb-0 text-white shadow-sm" style={{ backgroundColor: '#0b6640', borderColor: '#0b6640', color: '#ffffff' }}>
                                         + Tải tệp
                                         <input 
                                           type="file" 
-                                          accept=".pdf,.jpg,.jpeg,.png,.docx" 
+                                          accept="image/*" 
                                           className="d-none" 
                                           onChange={(e) => handleDocFileChange(doc.id, e.target.files[0])} 
                                         />
@@ -1889,42 +1988,77 @@ export default function PortalClient({ session, initialApplications }) {
                       </div>
 
                       {/* TERMS & CONDITIONS CHECKBOXES */}
-                      <div className="p-3.5 mb-3 rounded-3 border bg-light-subtle" style={{ backgroundColor: '#f8fafc' }}>
-                        <div className="fw-bold text-dark fs-7 mb-2.5">📋 VUI LÒNG TÍCH CHỌN ĐỒNG Ý BẮT BUỘC ĐỂ NỘP HỒ SƠ:</div>
-                        
-                        <div className="form-check mb-3">
-                          <input 
-                            className="form-check-input mt-1 cursor-pointer" 
-                            type="checkbox" 
-                            id="term1" 
-                            checked={agreedTerms1}
-                            onChange={(e) => setAgreedTerms1(e.target.checked)}
-                          />
-                          <label className="form-check-label text-dark cursor-pointer lh-base" htmlFor="term1" style={{ fontSize: '0.85rem' }}>
-                            Tôi xác nhận đã đọc, hiểu rõ và tự nguyện đồng ý để Công Ty thực hiện toàn bộ các hoạt động xử lý Dữ Liệu Cá Nhân đối với các Dữ Liệu Cá Nhân mà Tôi đã cung cấp, đang cung cấp hoặc sẽ cung cấp cho Công Ty, nhằm mục đích thực hiện các công việc, thủ tục có liên quan, phù hợp với Chính Sách Bảo Vệ Dữ Liệu Cá Nhân do Công Ty ban hành và được đăng tải công khai tại{' '}
-                            <a href="https://bimgroup.com/bvdlcn" target="_blank" rel="noopener noreferrer" className="text-primary text-decoration-none fw-medium" style={{ color: '#2563eb' }}>
-                              https://bimgroup.com/bvdlcn
-                            </a>
-                            , cũng như các sửa đổi, bổ sung của Chính Sách này tại từng thời điểm (nếu có).
-                          </label>
+                      <div className="p-3 p-md-4 mb-4 rounded-3 border" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
+                        <div className="fw-bold text-dark fs-6 mb-3 d-flex align-items-center gap-2">
+                          <span style={{ fontSize: '1.2rem' }}>📋</span>
+                          <span style={{ fontSize: '0.95rem' }}>VUI LÒNG TÍCH CHỌN ĐỒNG Ý BẮT BUỘC ĐỂ NỘP HỒ SƠ:</span>
                         </div>
+                        
+                        <div className="d-flex flex-column gap-3">
+                          {/* Term 1 Box */}
+                          <label 
+                            htmlFor="term1" 
+                            className="d-flex align-items-start gap-3 p-3 rounded-3 border cursor-pointer transition-all"
+                            style={{ 
+                              backgroundColor: agreedTerms1 ? '#f0fdf4' : '#ffffff', 
+                              borderColor: agreedTerms1 ? '#86efac' : '#cbd5e1',
+                              boxShadow: agreedTerms1 ? '0 2px 8px rgba(16,185,129,0.1)' : '0 1px 3px rgba(0,0,0,0.03)'
+                            }}
+                          >
+                            <input 
+                              className="form-check-input flex-shrink-0 cursor-pointer" 
+                              type="checkbox" 
+                              id="term1" 
+                              checked={agreedTerms1}
+                              onChange={(e) => setAgreedTerms1(e.target.checked)}
+                              style={{ width: '1.35rem', height: '1.35rem', marginTop: '0.15rem' }}
+                            />
+                            <span className="text-dark lh-base" style={{ fontSize: '0.88rem' }}>
+                              Tôi xác nhận đã đọc, hiểu rõ và tự nguyện đồng ý để Công Ty thực hiện toàn bộ các hoạt động xử lý Dữ Liệu Cá Nhân đối với các Dữ Liệu Cá Nhân mà Tôi đã cung cấp, đang cung cấp hoặc sẽ cung cấp cho Công Ty, nhằm mục đích thực hiện các công việc, thủ tục có liên quan, phù hợp với Chính Sách Bảo Vệ Dữ Liệu Cá Nhân do Công Ty ban hành và được đăng tải công khai tại{' '}
+                              <a 
+                                href="https://bimgroup.com/bvdlcn" 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="text-primary text-decoration-underline fw-bold" 
+                                style={{ color: '#2563eb' }}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                https://bimgroup.com/bvdlcn
+                              </a>
+                              , cũng như các sửa đổi, bổ sung của Chính Sách này tại từng thời điểm (nếu có).
+                            </span>
+                          </label>
 
-                        <div className="form-check mb-3">
-                          <input 
-                            className="form-check-input mt-1 cursor-pointer" 
-                            type="checkbox" 
-                            id="term2"
-                            checked={agreedTerms2}
-                            onChange={(e) => setAgreedTerms2(e.target.checked)}
-                          />
-                          <label className="form-check-label text-dark cursor-pointer lh-base" htmlFor="term2" style={{ fontSize: '0.85rem' }}>
-                            Tôi tự xác định rằng Tôi thuộc đối tượng mua Nhà Ở Xã Hội như đã kê khai và xin chịu trách nhiệm trước pháp luật về tính chính xác của các thông tin đã cung cấp.
+                          {/* Term 2 Box */}
+                          <label 
+                            htmlFor="term2" 
+                            className="d-flex align-items-start gap-3 p-3 rounded-3 border cursor-pointer transition-all"
+                            style={{ 
+                              backgroundColor: agreedTerms2 ? '#f0fdf4' : '#ffffff', 
+                              borderColor: agreedTerms2 ? '#86efac' : '#cbd5e1',
+                              boxShadow: agreedTerms2 ? '0 2px 8px rgba(16,185,129,0.1)' : '0 1px 3px rgba(0,0,0,0.03)'
+                            }}
+                          >
+                            <input 
+                              className="form-check-input flex-shrink-0 cursor-pointer" 
+                              type="checkbox" 
+                              id="term2"
+                              checked={agreedTerms2}
+                              onChange={(e) => setAgreedTerms2(e.target.checked)}
+                              style={{ width: '1.35rem', height: '1.35rem', marginTop: '0.15rem' }}
+                            />
+                            <span className="text-dark lh-base" style={{ fontSize: '0.88rem' }}>
+                              Tôi tự xác định rằng Tôi thuộc đối tượng mua Nhà Ở Xã Hội như đã kê khai và xin chịu trách nhiệm trước pháp luật về tính chính xác của các thông tin đã cung cấp.
+                            </span>
                           </label>
                         </div>
 
                         {(!agreedTerms1 || !agreedTerms2) && (
-                          <div className="p-2.5 rounded bg-warning bg-opacity-10 border border-warning text-dark fs-8 mt-2">
-                            ⚠️ <strong>Chú ý:</strong> Quý khách cần tích chọn đầy đủ 2 ô cam kết phía trên để kích hoạt nút Nộp hồ sơ.
+                          <div className="d-flex align-items-center gap-2 p-3 mt-3 rounded-3 border shadow-sm" style={{ backgroundColor: '#fffbeb', borderColor: '#fcd34d', color: '#78350f', fontSize: '0.88rem' }}>
+                            <span style={{ fontSize: '1.2rem', flexShrink: 0 }}>⚠️</span>
+                            <div>
+                              <strong>Chú ý:</strong> Quý khách cần tích chọn đầy đủ 2 ô cam kết phía trên để kích hoạt nút <strong>Nộp hồ sơ</strong>.
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1933,7 +2067,7 @@ export default function PortalClient({ session, initialApplications }) {
                       <div className="d-flex justify-content-between align-items-center gap-3 pt-3 mt-4 border-top">
                         <button 
                           type="button" 
-                          className="btn bg-white rounded-pill px-4 py-2.5 fw-semibold fs-7 border flex-fill text-nowrap"
+                          className="btn bg-white rounded-3 px-4 py-2.5 fw-semibold fs-7 border flex-fill text-nowrap"
                           style={{ borderColor: '#0b6640', color: '#0b6640' }}
                           onClick={() => setCurrentFormStep(2)}
                         >
@@ -1942,7 +2076,7 @@ export default function PortalClient({ session, initialApplications }) {
 
                         <button 
                           type="submit" 
-                          className="btn text-white rounded-pill px-4 py-2.5 fw-bold fs-7 border-0 flex-fill text-nowrap shadow-sm"
+                          className="btn text-white rounded-3 px-4 py-2.5 fw-bold fs-7 border-0 flex-fill text-nowrap shadow-sm"
                           disabled={isLoading || !agreedTerms1 || !agreedTerms2}
                           style={{ 
                             backgroundColor: (agreedTerms1 && agreedTerms2) ? '#0b6640' : '#6c757d', 
@@ -1967,7 +2101,7 @@ export default function PortalClient({ session, initialApplications }) {
                       <h6 className="fw-bold mb-0 text-success fs-6" style={{ color: '#0b6640' }}>
                         Bước 4/6 — Trạng Thái Hồ Sơ &amp; Tiến Độ Thẩm Định
                       </h6>
-                      <span className="badge bg-info-subtle text-info-emphasis px-2.5 py-1 rounded-pill fs-8">Tiến độ hồ sơ</span>
+                      <span className="badge bg-info-subtle text-info-emphasis px-2.5 py-1 rounded-2 fs-8">Tiến độ hồ sơ</span>
                     </div>
 
                     <div className="p-3 mb-3 rounded-3 border bg-light">
@@ -1977,7 +2111,7 @@ export default function PortalClient({ session, initialApplications }) {
                           <h5 className="fw-bold text-dark mb-0">{maHoSo}</h5>
                         </div>
 
-                        <span className={`badge px-3 py-1.5 fs-7 rounded-pill ${
+                        <span className={`badge px-3 py-1.5 fs-7 rounded-2 ${
                           activeApp?.status === 'approved' ? 'bg-success' :
                           activeApp?.status === 'rejected' ? 'bg-danger' : 'bg-warning text-dark'
                         }`}>
@@ -1986,10 +2120,10 @@ export default function PortalClient({ session, initialApplications }) {
                         </span>
                       </div>
 
-                      {activeApp?.notes && (
-                        <div className="p-2.5 bg-white border border-start border-4 border-emerald rounded-3 fs-8 text-dark mb-2">
-                          <strong>💬 Ghi chú kiểm duyệt từ Chuyên viên Hapro:</strong>
-                          <div className="mt-0.5">{activeApp.notes}</div>
+                      {(activeApp?.status === 'returned_for_supplement' || activeApp?.status === 'rejected' || activeApp?.status === 'rejected_wrong_k') && activeApp?.notes && (
+                        <div className="p-2.5 bg-white border border-start border-4 border-warning rounded-3 fs-8 text-dark mb-2 shadow-sm">
+                          <strong className="text-danger">💬 Ghi chú yêu cầu từ Cán bộ kiểm duyệt:</strong>
+                          <div className="mt-1 text-dark fw-semibold">{activeApp.notes}</div>
                         </div>
                       )}
 
@@ -2029,22 +2163,13 @@ export default function PortalClient({ session, initialApplications }) {
                       </div>
                     </div>
 
-                    <div className="d-flex justify-content-between pt-3 border-top gap-2">
+                    <div className="d-flex justify-content-start pt-3 border-top gap-2">
                       <button 
                         type="button" 
-                        className="btn btn-outline-secondary rounded-pill px-3 py-1.5 fw-semibold fs-7"
+                        className="btn btn-outline-secondary rounded-3 px-3 py-1.5 fw-semibold fs-7"
                         onClick={() => setCurrentFormStep(3)}
                       >
                         ← Quay lại Bước 3
-                      </button>
-
-                      <button 
-                        type="button" 
-                        className="btn btn-emerald rounded-pill px-4 py-2 fw-bold fs-7 shadow-sm"
-                        style={{ backgroundColor: '#0b6640', borderColor: '#0b6640' }}
-                        onClick={() => setCurrentFormStep(5)}
-                      >
-                        Tiếp tục: Bước 5 - Đối Chứng Bản Cứng →
                       </button>
                     </div>
                   </div>
@@ -2057,7 +2182,7 @@ export default function PortalClient({ session, initialApplications }) {
                       <h6 className="fw-bold mb-0 text-success fs-6" style={{ color: '#0b6640' }}>
                         Bước 5/6 — Đặt Lịch Hẹn Nộp Bản Gốc &amp; Cấp Số Thứ Tự (STT)
                       </h6>
-                      <span className="badge bg-primary px-2.5 py-1 rounded-pill fs-8">Hạn nộp: 3-5 ngày</span>
+                      <span className="badge bg-primary px-2.5 py-1 rounded-2 fs-8">Hạn nộp: 3-5 ngày</span>
                     </div>
 
                     <div className="alert alert-info border-0 shadow-sm mb-3 rounded-3 fs-7 p-3">
@@ -2074,7 +2199,7 @@ export default function PortalClient({ session, initialApplications }) {
                     {(generatedTicket || appointmentConfirmed) && (
                       <div className="card border-2 border-success rounded-3 p-3 mb-3 bg-success bg-opacity-10 shadow-sm">
                         <div className="text-center pb-2 border-bottom border-success">
-                          <span className="badge bg-success text-white px-3 py-1 rounded-pill fw-bold fs-7 mb-1">
+                          <span className="badge bg-success text-white px-3 py-1 rounded-2 fw-bold fs-7 mb-1">
                             ✓ ĐÃ CẤP PHIẾU HẸN VÀ SỐ THỨ TỰ (STT)
                           </span>
                           <h2 className="fw-black text-emerald display-6 mb-0" style={{ color: '#0b6640', letterSpacing: '1px' }}>
@@ -2106,7 +2231,7 @@ export default function PortalClient({ session, initialApplications }) {
                         <div className="pt-2 text-center">
                           <button 
                             type="button" 
-                            className="btn btn-emerald btn-sm rounded-pill px-4 py-1.5 fw-bold shadow-sm"
+                            className="btn btn-emerald btn-sm rounded-2 px-4 py-1.5 fw-bold shadow-sm"
                             style={{ backgroundColor: '#0b6640', borderColor: '#0b6640' }}
                             onClick={() => window.print()}
                           >
@@ -2138,12 +2263,12 @@ export default function PortalClient({ session, initialApplications }) {
                             value={appointmentTime}
                             onChange={(e) => setAppointmentTime(e.target.value)}
                           >
-                            <option value="08:30 - 09:30">Ca sáng: 08:30 - 09:30 (Còn 5 chỗ)</option>
-                            <option value="09:30 - 10:30">Ca sáng: 09:30 - 10:30 (Còn 3 chỗ)</option>
-                            <option value="10:30 - 11:30">Ca sáng: 10:30 - 11:30 (Còn 8 chỗ)</option>
-                            <option value="14:00 - 15:00">Ca chiều: 14:00 - 15:00 (Còn 4 chỗ)</option>
-                            <option value="15:00 - 16:00">Ca chiều: 15:00 - 16:00 (Còn 6 chỗ)</option>
-                            <option value="16:00 - 17:00">Ca chiều: 16:00 - 17:00 (Còn 2 chỗ)</option>
+                            <option value="08:30 - 09:30">Ca sáng: 08:30 - 09:30</option>
+                            <option value="09:30 - 10:30">Ca sáng: 09:30 - 10:30</option>
+                            <option value="10:30 - 11:30">Ca sáng: 10:30 - 11:30</option>
+                            <option value="14:00 - 15:00">Ca chiều: 14:00 - 15:00</option>
+                            <option value="15:00 - 16:00">Ca chiều: 15:00 - 16:00</option>
+                            <option value="16:00 - 17:00">Ca chiều: 16:00 - 17:00</option>
                           </select>
                         </div>
                       </div>
@@ -2151,7 +2276,7 @@ export default function PortalClient({ session, initialApplications }) {
                       <div className="text-end">
                         <button 
                           type="button" 
-                          className="btn btn-emerald rounded-pill px-4 py-2 fw-bold fs-7 shadow-sm"
+                          className="btn btn-emerald rounded-2 px-4 py-2 fw-bold fs-7 shadow-sm"
                           style={{ backgroundColor: '#0b6640', borderColor: '#0b6640' }}
                           onClick={handleConfirmAppointment}
                         >
@@ -2186,22 +2311,13 @@ export default function PortalClient({ session, initialApplications }) {
                       </ul>
                     </div>
 
-                    <div className="d-flex justify-content-between pt-3 border-top gap-2">
+                    <div className="d-flex justify-content-start pt-3 border-top gap-2">
                       <button 
                         type="button" 
-                        className="btn btn-outline-secondary rounded-pill px-3 py-1.5 fw-semibold fs-7"
+                        className="btn btn-outline-secondary rounded-2 px-3 py-1.5 fw-semibold fs-7"
                         onClick={() => setCurrentFormStep(4)}
                       >
                         ← Quay lại Bước 4
-                      </button>
-
-                      <button 
-                        type="button" 
-                        className="btn btn-emerald rounded-pill px-4 py-2 fw-bold fs-7 shadow-sm"
-                        style={{ backgroundColor: '#0b6640', borderColor: '#0b6640' }}
-                        onClick={() => setCurrentFormStep(6)}
-                      >
-                        Tiếp tục: Bước 6 - Thẩm Duyệt Liên Sở →
                       </button>
                     </div>
                   </div>
@@ -2214,7 +2330,7 @@ export default function PortalClient({ session, initialApplications }) {
                       <h6 className="fw-bold mb-0 text-success fs-6" style={{ color: '#0b6640' }}>
                         Bước 6/6 — Thẩm Duyệt Liên Sở &amp; Quyết Định Suất Mua
                       </h6>
-                      <span className="badge bg-success-subtle text-success px-2.5 py-1 rounded-pill fs-8">Kết quả phê duyệt</span>
+                      <span className="badge bg-success-subtle text-success px-2.5 py-1 rounded-2 fs-8">Kết quả phê duyệt</span>
                     </div>
 
                     <h6 className="fw-bold text-dark mb-2 fs-7">🏛️ Kết Quả Rà Soát Liên Sở Tỉnh Quảng Ninh:</h6>
@@ -2225,7 +2341,7 @@ export default function PortalClient({ session, initialApplications }) {
                           <div className="fw-bold text-dark fs-7">Sở Xây Dựng Tỉnh Quảng Ninh</div>
                           <div className="text-muted fs-8">Rà soát trùng lặp thông tin sở hữu nhà ở</div>
                         </div>
-                        <span className="badge bg-success px-2.5 py-1 rounded-pill fs-8">✓ Hợp lệ</span>
+                        <span className="badge bg-success px-2.5 py-1 rounded-2 fs-8">✓ Hợp lệ</span>
                       </div>
 
                       <div className="d-flex align-items-center justify-content-between p-2 bg-white rounded border">
@@ -2233,7 +2349,7 @@ export default function PortalClient({ session, initialApplications }) {
                           <div className="fw-bold text-dark fs-7">Sở Lao Động - TB &amp; Xã Hội</div>
                           <div className="text-muted fs-8">Xác minh nhóm đối tượng {targetObject}</div>
                         </div>
-                        <span className="badge bg-success px-2.5 py-1 rounded-pill fs-8">✓ Hợp lệ</span>
+                        <span className="badge bg-success px-2.5 py-1 rounded-2 fs-8">✓ Hợp lệ</span>
                       </div>
 
                       <div className="d-flex align-items-center justify-content-between p-2 bg-white rounded border">
@@ -2241,7 +2357,7 @@ export default function PortalClient({ session, initialApplications }) {
                           <div className="fw-bold text-dark fs-7">Cơ Sở Dữ Liệu Quốc Gia VNeID</div>
                           <div className="text-muted fs-8">Xác thực định danh điện tử mức 2</div>
                         </div>
-                        <span className="badge bg-success px-2.5 py-1 rounded-pill fs-8">✓ Xác thực</span>
+                        <span className="badge bg-success px-2.5 py-1 rounded-2 fs-8">✓ Xác thực</span>
                       </div>
                     </div>
 
@@ -2263,7 +2379,7 @@ export default function PortalClient({ session, initialApplications }) {
                         <a 
                           href="#" 
                           onClick={(e) => { e.preventDefault(); alert('Đang tải giấy xác nhận phê duyệt suất mua dạng PDF...'); }}
-                          className="btn btn-success rounded-pill px-3 py-1.5 fw-bold fs-7 shadow-sm"
+                          className="btn btn-success rounded-2 px-3 py-1.5 fw-bold fs-7 shadow-sm"
                         >
                           📥 Tải Giấy Xác Nhận Phê Duyệt Suất Mua (PDF)
                         </a>
@@ -2273,7 +2389,7 @@ export default function PortalClient({ session, initialApplications }) {
                     <div className="d-flex justify-content-between pt-3 border-top gap-2">
                       <button 
                         type="button" 
-                        className="btn btn-outline-secondary rounded-pill px-3 py-1.5 fw-semibold fs-7"
+                        className="btn btn-outline-secondary rounded-2 px-3 py-1.5 fw-semibold fs-7"
                         onClick={() => setCurrentFormStep(5)}
                       >
                         ← Quay lại Bước 5
@@ -2281,7 +2397,7 @@ export default function PortalClient({ session, initialApplications }) {
 
                       <button 
                         type="button" 
-                        className="btn btn-outline-success rounded-pill px-3 py-1.5 fw-bold fs-7"
+                        className="btn btn-outline-success rounded-2 px-3 py-1.5 fw-bold fs-7"
                         onClick={() => setViewMode('view')}
                       >
                         Về Trang Tổng Quan Hồ Sơ 🏠
@@ -2312,7 +2428,7 @@ export default function PortalClient({ session, initialApplications }) {
                 </div>
 
                 <h5 className="fw-bold text-dark mb-1">⏳ PHÒNG CHỜ XỦ LÝ HÀNG CHỜ CẤP SỐ</h5>
-                <span className="badge bg-warning text-dark px-3 py-1 rounded-pill fw-bold fs-8 mb-3">
+                <span className="badge bg-warning text-dark px-3 py-1 rounded-2 fw-bold fs-8 mb-3">
                   Tải cao đột biến: 1.000+ truy cập cùng lúc
                 </span>
 
@@ -2407,7 +2523,7 @@ export default function PortalClient({ session, initialApplications }) {
                   <a 
                     href={handbookModal.url} 
                     download
-                    className="btn btn-sm btn-primary rounded-pill px-3 py-1.5 fw-semibold fs-8 d-inline-flex align-items-center gap-1 shadow-sm"
+                    className="btn btn-sm btn-primary rounded-2 px-3 py-1.5 fw-semibold fs-8 d-inline-flex align-items-center gap-1 shadow-sm"
                   >
                     📥 Tải file Word mẫu (.docx)
                   </a>
@@ -2478,13 +2594,13 @@ export default function PortalClient({ session, initialApplications }) {
                   <span className="fs-1 d-block mb-2">📁</span>
                   <strong className="d-block text-dark mb-1">{previewModalDoc.name}</strong>
                   <span className="text-muted small d-block mb-3">Tệp đã sẵn sàng trong hệ thống</span>
-                  <a href={previewModalDoc.url} target="_blank" rel="noreferrer" className="btn btn-success btn-sm rounded-pill px-4 py-1.5 fw-bold">
+                  <a href={previewModalDoc.url} target="_blank" rel="noreferrer" className="btn btn-success btn-sm rounded-2 px-4 py-1.5 fw-bold">
                     ⬇ Tải về xem chi tiết
                   </a>
                 </div>
               </div>
               <div className="modal-footer bg-light">
-                <button type="button" className="btn btn-secondary btn-sm rounded-pill px-3" onClick={() => setPreviewModalDoc(null)}>Đóng</button>
+                <button type="button" className="btn btn-secondary btn-sm rounded-2 px-3" onClick={() => setPreviewModalDoc(null)}>Đóng</button>
               </div>
             </div>
           </div>
@@ -2507,7 +2623,7 @@ export default function PortalClient({ session, initialApplications }) {
                     {rejectionNotificationModal.status === 'rejected_wrong_k' ? '❌' : '⚠️'}
                   </span>
                   <div>
-                    <span className={`badge rounded-pill fs-8 ${rejectionNotificationModal.status === 'returned_for_supplement' ? 'bg-dark text-white' : 'bg-white text-danger fw-bold'}`}>
+                    <span className={`badge rounded-2 fs-8 ${rejectionNotificationModal.status === 'returned_for_supplement' ? 'bg-dark text-white' : 'bg-white text-danger fw-bold'}`}>
                       THÔNG BÁO TỪ BAN QUẢN LÝ
                     </span>
                     <h6 className="modal-title fw-bold mb-0 text-truncate" style={{ maxWidth: '380px' }}>
@@ -2527,35 +2643,48 @@ export default function PortalClient({ session, initialApplications }) {
               {/* Modal Body */}
               <div className="modal-body p-4 bg-light">
                 <div className="p-3 bg-white rounded-3 border mb-3 shadow-sm">
-                  <div className="d-flex justify-content-between align-items-center mb-1">
+                  <div className="d-flex justify-content-between align-items-center mb-1.5 flex-wrap gap-2">
                     <span className="fw-bold text-dark fs-7">👤 Khách hàng: {rejectionNotificationModal.fullName}</span>
-                    <span className="badge bg-secondary text-white fs-8">Mã HS: #{rejectionNotificationModal.id}</span>
+                    <span className="badge bg-secondary text-white fs-8 px-2.5 py-1 rounded-2">Mã HS: #{rejectionNotificationModal.id}</span>
                   </div>
-                  <div className="text-muted fs-8">
-                    🪪 Số CCCD: <strong>{rejectionNotificationModal.cccdNumber || rejectionNotificationModal.phoneNumber}</strong> | Nhóm đối tượng: <strong>{rejectionNotificationModal.targetObject || 'K1'}</strong>
+                  <div className="text-muted fs-8 d-flex align-items-center gap-2 flex-wrap">
+                    <span>🪪 Số CCCD: <strong className="text-dark">{rejectionNotificationModal.cccdNumber || rejectionNotificationModal.phoneNumber}</strong></span>
+                    <span className="text-secondary opacity-50">|</span>
+                    <span>Nhóm đối tượng: <strong className="text-dark">{rejectionNotificationModal.targetObject || 'K1'}</strong></span>
                   </div>
                 </div>
 
-                <div className={`p-3 rounded-3 mb-3 border ${
+                {/* Soft & Harmonious Feedback Box */}
+                <div className={`p-4 px-4 rounded-3 mb-3.5 border-start border-4 shadow-2sm ${
                   rejectionNotificationModal.status === 'rejected_wrong_k' 
-                    ? 'bg-danger bg-opacity-10 border-danger text-danger-emphasis' 
-                    : 'bg-warning bg-opacity-10 border-warning text-warning-emphasis'
+                    ? 'bg-danger-subtle border-danger text-danger' 
+                    : 'bg-warning-subtle border-warning text-dark'
                 }`}>
-                  <h6 className="fw-bold mb-1 fs-7">💬 Chi tiết nội dung phản hồi từ Hội đồng thẩm định:</h6>
-                  <p className="mb-0 fs-8 text-dark fw-semibold">
+                  <div className="fw-bold mb-2 fs-7 d-flex align-items-center gap-2">
+                    <span>💬</span>
+                    <span>Chi tiết nội dung phản hồi từ Hội đồng thẩm định:</span>
+                  </div>
+                  <div className="fs-8 text-dark lh-base pt-1 pb-1">
                     {rejectionNotificationModal.notes || 'Hồ sơ cần cập nhật thông tin theo yêu cầu.'}
-                  </p>
+                  </div>
                 </div>
 
+                {/* Soft Guidance Box */}
                 {rejectionNotificationModal.status === 'rejected_wrong_k' && (
-                  <div className="p-2.5 bg-white rounded border text-muted fs-8 mb-2">
-                    📌 <strong>Hướng dẫn:</strong> Do bạn đăng ký nhầm nhóm K, hồ sơ này bị từ chối. Bạn vui lòng bấm nút dưới đây để khai lại nhóm K chính xác và nộp lại hồ sơ từ đầu.
+                  <div className="p-3.5 bg-white rounded-3 border border-secondary-subtle text-secondary fs-8 mt-3 mb-2 d-flex align-items-start gap-2 shadow-sm">
+                    <span className="fs-6">📌</span>
+                    <div>
+                      <strong className="text-dark">Hướng dẫn:</strong> Do bạn đăng ký nhầm nhóm K, hồ sơ này bị từ chối. Bạn vui lòng bấm nút dưới đây để khai lại nhóm K chính xác và nộp lại hồ sơ từ đầu.
+                    </div>
                   </div>
                 )}
 
                 {rejectionNotificationModal.status === 'returned_for_supplement' && (
-                  <div className="p-2.5 bg-white rounded border text-muted fs-8 mb-2">
-                    📌 <strong>Hướng dẫn:</strong> Vui lòng chuẩn bị và tải lên đầy đủ tệp Giấy xác nhận chưa có nhà ở (Mẫu số 02) có dấu xác nhận của UBND xã/phường để hoàn tất hồ sơ.
+                  <div className="p-3.5 bg-white rounded-3 border border-secondary-subtle text-secondary fs-8 mt-3 mb-2 d-flex align-items-start gap-2 shadow-sm">
+                    <span className="fs-6 text-primary">📌</span>
+                    <div>
+                      <strong className="text-dark">Hướng dẫn:</strong> Vui lòng chuẩn bị và tải lên đầy đủ tệp Giấy xác nhận chưa có nhà ở (Mẫu số 02) có dấu xác nhận của UBND xã/phường để hoàn tất hồ sơ.
+                    </div>
                   </div>
                 )}
               </div>
@@ -2564,7 +2693,7 @@ export default function PortalClient({ session, initialApplications }) {
               <div className="modal-footer bg-white py-2.5 px-4 border-top d-flex justify-content-between align-items-center">
                 <button 
                   type="button" 
-                  className="btn btn-outline-secondary btn-sm rounded-pill px-3 fs-8"
+                  className="btn btn-outline-secondary btn-sm rounded-2 px-3 fs-8"
                   onClick={() => setRejectionNotificationModal(null)}
                 >
                   Đóng Thông Báo
@@ -2573,7 +2702,7 @@ export default function PortalClient({ session, initialApplications }) {
                 {rejectionNotificationModal.status === 'rejected_wrong_k' ? (
                   <button 
                     type="button" 
-                    className="btn btn-danger btn-sm rounded-pill px-4 fw-bold fs-8 shadow-sm"
+                    className="btn btn-danger btn-sm rounded-2 px-4 fw-bold fs-8 shadow-sm"
                     onClick={() => {
                       setRejectionNotificationModal(null);
                       setViewMode('edit');
@@ -2585,7 +2714,7 @@ export default function PortalClient({ session, initialApplications }) {
                 ) : (
                   <button 
                     type="button" 
-                    className="btn btn-warning text-dark btn-sm rounded-pill px-4 fw-bold fs-8 shadow-sm"
+                    className="btn btn-warning text-dark btn-sm rounded-2 px-4 fw-bold fs-8 shadow-sm"
                     onClick={() => {
                       setRejectionNotificationModal(null);
                       setViewMode('edit');
@@ -2660,7 +2789,7 @@ export default function PortalClient({ session, initialApplications }) {
                       <div key={app.id || idx} className="card border-0 shadow-sm rounded-3 mb-3 overflow-hidden bg-white">
                         <div className="card-header bg-white border-bottom py-2.5 px-3.5 d-flex justify-content-between align-items-center flex-wrap gap-2">
                           <div className="d-flex align-items-center gap-2">
-                            <span className={`badge rounded-pill fs-8 ${statusBadgeClass}`}>
+                            <span className={`badge rounded-2 fs-8 ${statusBadgeClass}`}>
                               {statusTitle}
                             </span>
                             <span className="fw-bold text-dark fs-8">Hồ sơ #{app.id}</span>
@@ -2693,7 +2822,7 @@ export default function PortalClient({ session, initialApplications }) {
                               {app.status === 'rejected_wrong_k' && (
                                 <button
                                   type="button"
-                                  className="btn btn-danger btn-sm rounded-pill px-3 fs-8 fw-bold"
+                                  className="btn btn-danger btn-sm rounded-2 px-3 fs-8 fw-bold"
                                   onClick={() => {
                                     setShowNotificationModal(false);
                                     setViewMode('edit');
@@ -2707,7 +2836,7 @@ export default function PortalClient({ session, initialApplications }) {
                               {app.status === 'returned_for_supplement' && (
                                 <button
                                   type="button"
-                                  className="btn btn-warning text-dark btn-sm rounded-pill px-3 fs-8 fw-bold"
+                                  className="btn btn-warning text-dark btn-sm rounded-2 px-3 fs-8 fw-bold"
                                   onClick={() => {
                                     setShowNotificationModal(false);
                                     setViewMode('edit');
@@ -2720,7 +2849,7 @@ export default function PortalClient({ session, initialApplications }) {
 
                               <button
                                 type="button"
-                                className="btn btn-outline-success btn-sm rounded-pill px-3 fs-8 fw-semibold"
+                                className="btn btn-outline-success btn-sm rounded-2 px-3 fs-8 fw-semibold"
                                 onClick={() => {
                                   setShowNotificationModal(false);
                                   setActiveApp(app);
@@ -2745,7 +2874,7 @@ export default function PortalClient({ session, initialApplications }) {
                 </span>
                 <button 
                   type="button" 
-                  className="btn btn-emerald btn-sm text-white rounded-pill px-4 fs-8 fw-bold"
+                  className="btn btn-emerald btn-sm text-white rounded-2 px-4 fs-8 fw-bold"
                   style={{ backgroundColor: '#0b6640' }}
                   onClick={() => setShowNotificationModal(false)}
                 >
@@ -2753,6 +2882,55 @@ export default function PortalClient({ session, initialApplications }) {
                 </button>
               </div>
 
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DOCUMENT PREVIEW MODAL */}
+      {previewModalDoc && (
+        <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.75)', zIndex: 1090 }}>
+          <div className="modal-dialog modal-dialog-centered modal-lg">
+            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+              <div className="modal-header py-2.5 px-3 text-white d-flex align-items-center justify-content-between" style={{ backgroundColor: '#0b6640' }}>
+                <div className="d-flex align-items-center gap-2">
+                  <span>🖼️</span>
+                  <h6 className="modal-title fw-bold mb-0 text-white fs-7 text-truncate" style={{ maxWidth: '500px' }}>
+                    {previewModalDoc.name || 'Xem trước tệp tin'}
+                  </h6>
+                </div>
+                <button 
+                  type="button" 
+                  className="btn-close btn-close-white" 
+                  onClick={() => setPreviewModalDoc(null)}
+                ></button>
+              </div>
+              <div className="modal-body p-3 text-center bg-dark d-flex align-items-center justify-content-center" style={{ minHeight: '350px', maxHeight: '75vh', overflow: 'auto' }}>
+                {previewModalDoc.url || previewModalDoc.previewUrl ? (
+                  <img 
+                    src={previewModalDoc.url || previewModalDoc.previewUrl} 
+                    alt={previewModalDoc.name || 'Xem trước'} 
+                    className="img-fluid rounded shadow-sm" 
+                    style={{ maxHeight: '70vh', objectFit: 'contain' }} 
+                  />
+                ) : (
+                  <div className="text-white py-5">
+                    <span className="fs-1 d-block mb-2">📄</span>
+                    <p className="mb-0 fs-7">{previewModalDoc.name}</p>
+                    <span className="text-secondary fs-8">File đã chọn sẵn sàng tải lên</span>
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer py-2 px-3 bg-light d-flex justify-content-between align-items-center">
+                <span className="text-muted fs-8">Kích thước: {previewModalDoc.size ? `${(previewModalDoc.size / 1024).toFixed(1)} KB` : 'Ảnh đã mã hóa'}</span>
+                <button 
+                  type="button" 
+                  className="btn btn-secondary btn-sm rounded-2 px-4 fw-bold fs-8"
+                  onClick={() => setPreviewModalDoc(null)}
+                >
+                  Đóng
+                </button>
+              </div>
             </div>
           </div>
         </div>

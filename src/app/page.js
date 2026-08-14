@@ -716,10 +716,10 @@ export default function HomePage() {
                     </div>
 
                     {selectedUnit.status === 'sold' ? (
-                      <button className="btn btn-secondary btn-sm w-100 rounded-pill" disabled>Căn hộ này đã bán</button>
+                      <button className="btn btn-secondary btn-sm w-100 rounded-2" disabled>Căn hộ này đã bán</button>
                     ) : (
                       <button 
-                        className={`btn ${selectedUnit.status === 'reserved' ? 'btn-danger' : 'btn-emerald'} btn-sm w-100 rounded-pill py-2`}
+                        className={`btn ${selectedUnit.status === 'reserved' ? 'btn-danger' : 'btn-emerald'} btn-sm w-100 rounded-2 py-2`}
                         onClick={() => handleReserve(selectedUnit)}
                       >
                         {selectedUnit.status === 'reserved' 

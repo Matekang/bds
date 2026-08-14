@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth';
-import { getDb } from '@/lib/db';
 import PortalClient from './PortalClient';
 
 export const metadata = {
@@ -16,14 +15,10 @@ export default async function PortalPage() {
     redirect('/?auth=login');
   }
 
-  // Lấy dữ liệu hồ sơ ban đầu của user này
-  const db = getDb();
-  const initialApplications = db.applications.filter(a => a.userId === session.userId);
-
   return (
     <PortalClient 
       session={session} 
-      initialApplications={initialApplications} 
+      initialApplications={[]} 
     />
   );
 }

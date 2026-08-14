@@ -141,7 +141,7 @@ export default function DieuKienMuaPage() {
               </div>
 
               <div className="d-flex justify-content-end mt-4">
-                <button className="btn btn-emerald px-4 py-2 rounded-pill" onClick={() => setStep(2)}>Tiếp theo ➜</button>
+                <button className="btn btn-emerald px-4 py-2 rounded-2" onClick={() => setStep(2)}>Tiếp theo ➜</button>
               </div>
             </div>
           )}
@@ -177,8 +177,8 @@ export default function DieuKienMuaPage() {
               </div>
 
               <div className="d-flex justify-content-between mt-4">
-                <button className="btn btn-light px-4 py-2 rounded-pill" onClick={() => setStep(1)}>➜ Quay lại</button>
-                <button className="btn btn-emerald px-4 py-2 rounded-pill" onClick={() => setStep(3)}>Tiếp theo ➜</button>
+                <button className="btn btn-light px-4 py-2 rounded-2" onClick={() => setStep(1)}>➜ Quay lại</button>
+                <button className="btn btn-emerald px-4 py-2 rounded-2" onClick={() => setStep(3)}>Tiếp theo ➜</button>
               </div>
             </div>
           )}
@@ -236,8 +236,8 @@ export default function DieuKienMuaPage() {
               </div>
 
               <div className="d-flex justify-content-between mt-4">
-                <button className="btn btn-light px-4 py-2 rounded-pill" onClick={() => setStep(2)}>➜ Quay lại</button>
-                <button className="btn btn-emerald px-4 py-2 rounded-pill" onClick={checkEligibility}>Kiểm tra kết quả ➜</button>
+                <button className="btn btn-light px-4 py-2 rounded-2" onClick={() => setStep(2)}>➜ Quay lại</button>
+                <button className="btn btn-emerald px-4 py-2 rounded-2" onClick={checkEligibility}>Kiểm tra kết quả ➜</button>
               </div>
             </div>
           )}
@@ -254,10 +254,10 @@ export default function DieuKienMuaPage() {
                     Theo khảo sát của hệ thống, bạn hoàn toàn đủ điều kiện nộp hồ sơ đăng ký mua nhà ở xã hội tại dự án **Marina Living Hạ Long**. Vui lòng đăng ký tài khoản cư dân và nộp hồ sơ trực tuyến ngay để được bộ phận tư vấn ưu tiên xét duyệt.
                   </p>
                   <div className="d-flex justify-content-center gap-3">
-                    <button className="btn btn-emerald px-4 py-2.5 rounded-pill fw-bold" data-bs-toggle="modal" data-bs-target="#registerModal">
+                    <button className="btn btn-emerald px-4 py-2.5 rounded-2 fw-bold" data-bs-toggle="modal" data-bs-target="#registerModal">
                       Đăng Ký Tài Khoản & Nộp Hồ Sơ
                     </button>
-                    <button className="btn btn-light px-4 py-2.5 rounded-pill" onClick={resetSurvey}>
+                    <button className="btn btn-light px-4 py-2.5 rounded-2" onClick={resetSurvey}>
                       Khảo sát lại
                     </button>
                   </div>
@@ -277,10 +277,10 @@ export default function DieuKienMuaPage() {
                     Nếu bạn còn thắc mắc, vui lòng đăng ký nhận cuộc gọi tư vấn chuyên sâu từ đội ngũ bán hàng BIM Group.
                   </p>
                   <div className="d-flex justify-content-center gap-3">
-                    <button className="btn btn-gold px-4 py-2.5 rounded-pill fw-bold" data-bs-toggle="modal" data-bs-target="#loginModal">
+                    <button className="btn btn-gold px-4 py-2.5 rounded-2 fw-bold" data-bs-toggle="modal" data-bs-target="#loginModal">
                       Đăng Ký Nhận Tư Vấn Trực Tiếp
                     </button>
-                    <button className="btn btn-light px-4 py-2.5 rounded-pill" onClick={resetSurvey}>
+                    <button className="btn btn-light px-4 py-2.5 rounded-2" onClick={resetSurvey}>
                       Khảo sát lại
                     </button>
                   </div>

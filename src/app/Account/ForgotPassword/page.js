@@ -33,7 +33,7 @@ export default function ForgotPasswordPage() {
               <p className="text-muted small mb-4">
                 Hệ thống đã gửi một liên kết/mã OTP khôi phục mật khẩu tới số điện thoại <strong>{phone}</strong>. Vui lòng kiểm tra tin nhắn SMS.
               </p>
-              <Link href="/" className="btn btn-emerald rounded-pill px-4 py-2 text-decoration-none">
+              <Link href="/" className="btn btn-emerald rounded-2 px-4 py-2 text-decoration-none">
                 ➜ Quay về Trang Chủ
               </Link>
             </div>
@@ -51,7 +51,7 @@ export default function ForgotPasswordPage() {
                 />
               </div>
 
-              <button type="submit" className="btn btn-emerald w-100 py-3 rounded-pill fw-bold mb-3">
+              <button type="submit" className="btn btn-emerald w-100 py-3 rounded-2 fw-bold mb-3">
                 🔑 Gửi yêu cầu khôi phục
               </button>
 
